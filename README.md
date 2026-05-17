@@ -24,9 +24,9 @@ same durable backend.
 
 ## Why This Exists
 
-Memact is becoming permissioned context infrastructure. Apps should be able to
-understand users' digital activity, but not by reading a user's
-private graph or treating captured activity as a raw data feed.
+Memact is permissioned intent infrastructure. Apps should be able to predict
+what users are trying to do from approved digital activity, but not by reading a
+user's private graph or treating captured activity as a raw data feed.
 
 The intended contract is:
 
@@ -57,9 +57,11 @@ Scopes are explicit:
 - `memory:read_summary`
 - `memory:read_evidence`
 - `memory:read_graph`
+- `intent:predict`
 
 Raw graph reads are intentionally separate from evidence, schema, and summary
-scopes. The default product result is useful context, not raw captured data.
+scopes. Intent prediction is a separate permission. The default product result
+is evidence-backed context and intent hypotheses, not raw captured data.
 
 Activity categories are explicit too:
 
@@ -232,7 +234,7 @@ Example response shape:
   "categories": ["web:news"],
   "understanding_strategy": {
     "product": "permissioned_understanding",
-    "tagline": "Understand users' digital activity.",
+    "tagline": "Understand what users are trying to do.",
     "capture_plan": {
       "local_only_raw_capture": true,
       "allowed_inputs": ["article url", "headline", "selected article text"]
@@ -248,6 +250,52 @@ Example response shape:
   }
 }
 ```
+
+## Intent Prediction API
+
+Apps can request a scoped intent hypothesis after consent. The backend verifies
+the app key and `connection_id`, checks `intent:predict`, filters activity to
+approved categories, and then calls the Intent engine.
+
+```http
+POST /v1/intent/predict
+Authorization: Bearer mka_your_private_app_key
+Content-Type: application/json
+```
+
+```json
+{
+  "connection_id": "connection_id_from_connect_redirect",
+  "required_scopes": ["memory:read_summary"],
+  "activity_categories": ["web:research"],
+  "activities": [
+    {
+      "id": "act_1",
+      "type": "documentation_page",
+      "category": "web:research",
+      "label": "Read API integration docs",
+      "url": "https://example.com/docs",
+      "timestamp": "2026-05-17T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+Response shape:
+
+```json
+{
+  "allowed": true,
+  "schema_version": "memact.intent.v0",
+  "intent": {
+    "predicted_intents": []
+  }
+}
+```
+
+Intent predictions are hypotheses, not facts. The response preserves evidence,
+allowed actions, blocked actions, and safety metadata. Raw submitted activity is
+not returned by default.
 
 For production, set:
 
