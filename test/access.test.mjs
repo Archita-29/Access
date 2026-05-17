@@ -150,6 +150,9 @@ test("policy suggests selected default permissions from activity categories", as
   const policy = await service.policy()
 
   assert.ok(policy.permission_suggestion.scopes.includes("capture:webpage"))
+  assert.ok(policy.permission_suggestion.scopes.includes("intent:predict"))
+  assert.equal(policy.default_app_scopes.includes("intent:predict"), false)
+  assert.ok(Object.hasOwn(policy.scopes, "intent:predict"))
   assert.ok(policy.permission_suggestions["media:video"].scopes.includes("capture:media"))
   assert.ok(policy.permission_suggestions["web:social"].scopes.includes("memory:read_evidence"))
   assert.ok(policy.preset_suggestions.length >= 2)

@@ -5,6 +5,7 @@ import { loadLocalEnv } from "./env.mjs"
 import { JsonFileStore } from "./store.mjs"
 import { AccessError, AccessService } from "./service.mjs"
 import { buildPermissionedIntentResponse, predictPermissionedIntent } from "./intent-service.mjs"
+import { loadPredictIntent } from "./intent-engine.mjs"
 import { CATEGORY_DEFINITIONS, KNOWLEDGE_GRAPH_CONTRACT, SAFETY_RULES, SENSITIVE_CAPTURE_RULES } from "./policy.mjs"
 
 loadLocalEnv()
@@ -88,12 +89,15 @@ async function route(service, request, url, body) {
       const access = await verifySupabaseApiAccess(request, {
         connection_id: body?.connection_id || "",
         required_scopes: ["intent:predict", ...(Array.isArray(body?.required_scopes) ? body.required_scopes : [])],
-        activity_categories: []
+        activity_categories: body?.activity_categories || []
       })
       return buildPermissionedIntentResponse({
         access,
         activityCategories: body?.activity_categories || [],
         activities: body?.activities || [],
+        predictIntent: await loadPredictIntent().catch((error) => {
+          throw new AccessError(503, "intent_engine_unavailable", process.env.NODE_ENV === "test" ? error?.message : "Intent prediction is temporarily unavailable.")
+        }),
         now: body?.now
       })
     }

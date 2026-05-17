@@ -149,7 +149,7 @@ test("HTTP intent prediction can use Supabase-backed verification", async () => 
     assert.deepEqual(JSON.parse(requests[0].options.body), {
       api_key_input: "mka_private_key",
       required_scopes_input: ["intent:predict", "memory:read_summary"],
-      activity_categories_input: [],
+      activity_categories_input: ["web:research", "web:social"],
       consent_id_input: "consent-1"
     })
   } finally {

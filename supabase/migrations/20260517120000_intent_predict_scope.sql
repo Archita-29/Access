@@ -32,8 +32,7 @@ as $$
       'schema:write',
       'graph:write',
       'memory:write',
-      'memory:read_summary',
-      'intent:predict'
+      'memory:read_summary'
     ]::text[]),
     'default_app_categories', to_jsonb(array[
       'web:news',

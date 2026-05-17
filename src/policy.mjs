@@ -60,8 +60,7 @@ export const DEFAULT_APP_SCOPES = Object.freeze([
   "schema:write",
   "graph:write",
   "memory:write",
-  "memory:read_summary",
-  "intent:predict"
+  "memory:read_summary"
 ])
 
 export const CATEGORY_DEFINITIONS = Object.freeze({
