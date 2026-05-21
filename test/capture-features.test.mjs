@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import path from "node:path"
 import { AccessService } from "../src/service.mjs"
 import { MemoryStore } from "../src/store.mjs"
 
@@ -47,6 +48,30 @@ test("feature registry is listed and feature run requires feature scope", async 
   )
 })
 
+test("feature run uses Studio runtime when available", async () => {
+  const { service, key, consent } = await setupAccess(["feature:run", "memory:read_summary"], {
+    studioPath: path.resolve(process.cwd(), "..", "studio")
+  })
+  const result = await service.runFeature(key.key, "user-context-wiki", {
+    connection_id: consent.consent.id,
+    activity_categories: ["web:research"],
+    input: {
+      schema_packets: [
+        {
+          category: "research",
+          schema_type: "learning",
+          title: "API setup"
+        }
+      ]
+    }
+  })
+
+  assert.equal(result.status, "ok")
+  assert.equal(Boolean(result.output.groups["research:learning"]), true)
+  const data = await service.store.read()
+  assert.equal(data.feature_runs[0].status, "ok")
+})
+
 test("schema and memory summary routes require their scopes", async () => {
   const { service, key, consent } = await setupAccess(["memory:read_summary"])
   await assert.rejects(
@@ -58,8 +83,8 @@ test("schema and memory summary routes require their scopes", async () => {
   assert.deepEqual(memory.memory, [])
 })
 
-async function setupAccess(scopes) {
-  const service = new AccessService(new MemoryStore())
+async function setupAccess(scopes, options = {}) {
+  const service = new AccessService(new MemoryStore(), () => new Date(), options)
   const developer = await service.signup({ email: `dev-${Math.random()}@example.com`, password: "long password" })
   const user = await service.signup({ email: `user-${Math.random()}@example.com`, password: "long password" })
   const app = await service.registerApp(developer.user.id, {

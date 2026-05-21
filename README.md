@@ -8,6 +8,15 @@ access, capture ingestion checks, and audit/usage records.
 Access is the backend front door for Memact. It is not the capture engine,
 meaning engine, schema engine, feature runtime, or memory store.
 
+In this repo, "works" means Access can verify an app, accept permitted capture
+events, list available features, enforce feature scopes, and return permitted
+schema/memory summaries from its store. If a deeper runtime is not connected,
+Access returns a clear error instead of pretending it produced a feature result.
+
+For the playground flow, apps send permitted signals to Access. Access gates the
+request, Capture records the activity, Schema and Memory prepare useful memory,
+and Studio features can return personalization help back to the app.
+
 ## What This Repo Owns
 
 - App registration metadata.
@@ -84,16 +93,44 @@ Content-Type: application/json
 Access verifies the key, consent, scopes, and category before accepting the
 event.
 
+Accepted events are stored in the Access store today so the gateway can be
+tested end to end. Capture remains the repo that owns capture normalization,
+privacy skips, extension capture, and future capture storage adapters.
+
 ## Features
 
 The default feature registry includes:
 
-- `user-context-wiki`
+- `user-context-wiki` / Memory Wiki
 - `cognitive-load`
 - `research-map`
 
-If Studio is not connected yet, feature runs fail clearly with
-`feature_runtime_unavailable` instead of inventing output.
+When Studio is available through `MEMACT_STUDIO_PATH` or a sibling `studio`
+folder, Access loads the feature and runs it. If Studio is not connected,
+feature runs fail clearly with `feature_runtime_unavailable` instead of
+inventing output.
+
+## Backend Reality Check
+
+The backend is currently real in these places:
+
+- API keys are hashed and checked.
+- Consent and `connection_id` are checked before app access.
+- Scopes and activity categories are enforced.
+- Capture events can be accepted through `POST /v1/capture/events`.
+- Sensitive payload fields are stripped before storage.
+- Feature registry is returned through `GET /v1/features`.
+- Feature runs require `feature:run`.
+- Studio features run locally when the Studio runtime is available.
+- Schema and memory summary routes require their read scopes.
+- The old intent route is not silently used as core API.
+
+The backend is intentionally not pretending in these places:
+
+- Studio feature execution is not faked if the runtime is unavailable.
+- Capture, Inference, Schema, and Memory stay separate repos instead of being
+  copy-pasted into Access.
+- Supabase remains an auth/storage integration path, not the product identity.
 
 ## Development
 

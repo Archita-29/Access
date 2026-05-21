@@ -1,4 +1,5 @@
 import { hashPassword, hashSecret, randomId, randomToken, verifyPassword } from "./crypto.mjs"
+import path from "node:path"
 import {
   CATEGORY_DEFINITIONS,
   ACTIVITY_CATEGORY_REGISTRY,
@@ -36,6 +37,7 @@ export class AccessService {
     this.store = store
     this.now = now
     this.verifyExternalSession = options.verifyExternalSession || verifySupabaseAccessToken
+    this.studioPath = options.studioPath || process.env.MEMACT_STUDIO_PATH || path.resolve(process.cwd(), "..", "studio")
   }
 
   async signup({ email, password }) {
@@ -466,23 +468,32 @@ export class AccessService {
 
   async runFeature(apiKey, featureId, body = {}) {
     const { feature, access } = await this.verifyFeatureAccess(apiKey, featureId, body)
+    const runInput = body.input && typeof body.input === "object" ? body.input : body
     return this.mutate(async (data) => {
+      const runtime = await runStudioFeature(this.studioPath, feature.feature_id, runInput, {
+        app: {
+          id: access.app.id,
+          name: access.app.name
+        },
+        connection_id: access.connection_id,
+        categories: body.activity_categories || [],
+        scopes: feature.required_scopes || []
+      })
+      const ok = runtime.status === "ok"
       const run = {
         id: randomId("frn"),
         feature_id: feature.feature_id,
         app_id: access.app.id,
         user_id: access.user_id,
         connection_id: access.connection_id,
-        status: "error",
-        error: {
-          code: "feature_runtime_unavailable",
-          message: "Feature runtime is not connected yet."
-        },
+        status: runtime.status,
+        output: ok ? runtime.output : undefined,
+        error: ok ? undefined : runtime.error,
         created_at: timestamp(this.now())
       }
       data.feature_runs.push(run)
-      recordUsageEvent(data, "feature.run.unavailable", { app_id: access.app.id, feature_id: feature.feature_id }, this.now)
-      return { status: "error", error: run.error }
+      recordUsageEvent(data, ok ? "feature.run" : "feature.run.unavailable", { app_id: access.app.id, feature_id: feature.feature_id }, this.now)
+      return ok ? runtime : { status: "error", error: run.error }
     })
   }
 
@@ -607,15 +618,15 @@ function defaultFeatureRegistry() {
   return [
     {
       feature_id: "user-context-wiki",
-      name: "User Context Wiki",
-      description: "Groups permitted context into a readable user-context wiki.",
+      name: "Memory Wiki",
+      description: "Groups permitted memory into a readable wiki.",
       required_scopes: ["feature:run", "memory:read_summary"],
       required_schema_types: ["*"]
     },
     {
       feature_id: "cognitive-load",
       name: "Cognitive Load",
-      description: "Estimates app-context workload from permitted schema packets.",
+      description: "Estimates workload from permitted schema packets.",
       required_scopes: ["feature:run", "schema:read"],
       required_schema_types: ["attention", "productivity", "work"]
     },
@@ -627,6 +638,28 @@ function defaultFeatureRegistry() {
       required_schema_types: ["research", "learning"]
     }
   ]
+}
+
+async function runStudioFeature(studioPath, featureId, input, context) {
+  try {
+    const runtime = await import(pathToFileUrl(path.join(studioPath, "src", "index.mjs")))
+    const feature = await runtime.loadFeature(path.join(studioPath, "features", featureId))
+    return await runtime.runFeature(feature, input, context)
+  } catch (error) {
+    return {
+      status: "error",
+      error: {
+        code: "feature_runtime_unavailable",
+        message: "Feature runtime is not connected yet.",
+        details: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+}
+
+function pathToFileUrl(filePath) {
+  const normalized = path.resolve(filePath).replace(/\\/g, "/")
+  return `file:///${normalized.replace(/^\/+/, "")}`
 }
 
 function sanitizeCapturePayload(payload) {

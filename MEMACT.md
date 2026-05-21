@@ -11,14 +11,15 @@ event ingestion, and usage logs.
 Website manages -> Access checks -> Capture records -> Inference understands -> Schema organizes -> Memory stores -> Studio features run -> Apps and users use results
 ```
 
-Access does not capture activity, infer meaning, form schemas, store memory, or
-run Studio features. It verifies whether a request is allowed and routes it.
+Access does not capture activity, infer meaning, form schemas, or store memory.
+It verifies whether a request is allowed, routes it, and can run Studio features
+when the Studio runtime is connected.
 
 ## Public Copy
 
 Use:
 
-- "Memact helps apps personalize better with context users control."
+- "Memact is a playground where apps personalize based on what users choose to share."
 - "Apps send signals and use features through scoped API access."
 - "Users choose what each app can use."
 

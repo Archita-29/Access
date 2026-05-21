@@ -15,13 +15,13 @@ export const SCOPE_DEFINITIONS = Object.freeze({
     grantsGraphRead: false
   },
   "context:read": {
-    label: "Read context",
-    description: "Allow this app to receive permitted user context.",
+    label: "Read personalization memory",
+    description: "Allow this app to receive permitted Memact memory.",
     grantsGraphRead: false
   },
   "context:write": {
-    label: "Write context",
-    description: "Allow this app to add useful context for later personalization.",
+    label: "Write personalization memory",
+    description: "Allow this app to add useful Memact memory for later personalization.",
     grantsGraphRead: false
   },
   "capture:webpage": {
@@ -31,18 +31,18 @@ export const SCOPE_DEFINITIONS = Object.freeze({
   },
   "capture:media": {
     label: "Use media evidence",
-    description: "Allow Memact to use approved captions, transcripts, and media context when available.",
+    description: "Allow Memact to use approved captions, transcripts, and media signals when available.",
     grantsGraphRead: false
   },
   "capture:device": {
-    label: "Use device context",
+    label: "Use device signals",
     description: "Allow Memact to use approved OS-level activity signals from a local helper.",
     grantsGraphRead: false,
     sensitive: true
   },
   "schema:write": {
     label: "Create schema packets",
-    description: "Allow Memact to organize retained context into schema packets.",
+    description: "Allow Memact to organize retained memory into schema packets.",
     grantsGraphRead: false
   },
   "schema:read": {
@@ -51,29 +51,29 @@ export const SCOPE_DEFINITIONS = Object.freeze({
     grantsGraphRead: false
   },
   "graph:write": {
-    label: "Write context graph",
-    description: "Allow Memact to store nodes, edges, and evidence packets that describe user context for this app.",
+    label: "Write memory graph",
+    description: "Allow Memact to store nodes, edges, and evidence packets that describe user memory for this app.",
     grantsGraphRead: false
   },
   "memory:write": {
     label: "Write memory",
-    description: "Allow Memact to retain approved context as memory.",
+    description: "Allow Memact to retain approved activity as memory.",
     grantsGraphRead: false
   },
   "memory:read_summary": {
-    label: "Read context summaries",
-    description: "Allow the app to receive compact summaries of approved user context.",
+    label: "Read memory summaries",
+    description: "Allow the app to receive compact summaries of approved user memory.",
     grantsGraphRead: false
   },
   "memory:read_evidence": {
     label: "Read evidence cards",
-    description: "Allow the app to receive approved evidence snippets that explain the context.",
+    description: "Allow the app to receive approved evidence snippets that explain the memory.",
     grantsGraphRead: false,
     sensitive: true
   },
   "memory:read_graph": {
-    label: "Read context graph",
-    description: "Allow the app to receive permitted nodes and edges about approved user context.",
+    label: "Read memory graph",
+    description: "Allow the app to receive permitted nodes and edges about approved user memory.",
     grantsGraphRead: true,
     sensitive: true
   },
@@ -111,7 +111,7 @@ export const CATEGORY_DEFINITIONS = Object.freeze({
   },
   "media:audio": {
     label: "Audio and podcasts",
-    description: "Podcasts, talks, songs with available text, and spoken audio context."
+    description: "Podcasts, talks, songs with available text, and spoken audio signals."
   },
   "ai:assistant": {
     label: "AI conversations",
@@ -172,7 +172,7 @@ export const CATEGORY_ALGORITHMS = Object.freeze({
     memory: ["concepts revisited", "sources trusted", "unresolved questions", "study trajectory"]
   },
   "web:commerce": {
-    label: "Shopping context understanding",
+    label: "Shopping preference understanding",
     capture: ["product url", "title", "brand", "price when visible", "review snippets", "comparison attributes", "availability"],
     understand: ["purchase criteria", "tradeoffs", "preferred brands", "budget signals", "comparison purpose"],
     schema: ["product", "attribute", "preference", "comparison", "decision"],
@@ -180,8 +180,8 @@ export const CATEGORY_ALGORITHMS = Object.freeze({
   },
   "web:social": {
     label: "Social post understanding",
-    capture: ["public post url", "creator handle", "caption or post text", "thread context", "public engagement labels", "linked media metadata"],
-    understand: ["topics followed", "creator affinity", "community context", "sentiment of interest", "reply or share intent"],
+    capture: ["public post url", "creator handle", "caption or post text", "thread signals", "public engagement labels", "linked media metadata"],
+    understand: ["topics followed", "creator affinity", "community signal", "sentiment of interest", "reply or share intent"],
     schema: ["post", "creator", "topic", "community", "interest_signal"],
     memory: ["creators revisited", "communities followed", "topics that sustain attention", "public interaction patterns"]
   },
@@ -209,7 +209,7 @@ export const CATEGORY_ALGORITHMS = Object.freeze({
   "dev:code": {
     label: "Developer workflow understanding",
     capture: ["repository name", "file path metadata", "issue or PR titles", "terminal command labels", "docs pages", "error messages"],
-    understand: ["implementation goal", "bug context", "dependencies touched", "review risk", "next debugging step"],
+    understand: ["implementation goal", "bug detail", "dependencies touched", "review risk", "next debugging step"],
     schema: ["repo", "file", "issue", "error", "implementation_step"],
     memory: ["project conventions", "repeated errors", "files frequently touched together", "review preferences"]
   },
@@ -227,7 +227,7 @@ const DEFAULT_CATEGORY_ALGORITHM = Object.freeze({
   capture: ["event category", "source app", "timestamp", "visible label", "permitted metadata"],
   understand: ["topic", "action", "preference", "purpose"],
   schema: ["activity", "topic", "preference", "source"],
-  memory: ["stable preferences", "repeated topics", "useful context"]
+  memory: ["stable preferences", "repeated topics", "useful memory"]
 })
 
 export const PERMISSION_REGISTRY = Object.freeze(Object.fromEntries(
@@ -265,7 +265,7 @@ export const STORAGE_PLAN = Object.freeze({
   default: {
     id: "local-first-memory",
     label: "Local-first memory",
-    description: "Capture packets and sensitive evidence stay local by default. Apps receive only context allowed by consent."
+    description: "Capture packets and sensitive evidence stay local by default. Apps receive only memory allowed by consent."
   },
   future_user_cloud: {
     id: "user-owned-cloud-memory",
@@ -296,7 +296,7 @@ export function buildPermissionSuggestion(categories = [], appPurpose = "") {
   }
   return {
     id: createStrategyId(scopes, cleanCategories),
-    label: cleanCategories.includes("web:news") ? "Suggested for article context" : "Suggested permissions",
+    label: cleanCategories.includes("web:news") ? "Suggested for article personalization" : "Suggested permissions",
     description: "Selected by default from this app's activity categories. You can narrow or expand it before saving.",
     scopes: normalizeScopes(scopes),
     categories: cleanCategories
@@ -313,7 +313,7 @@ export function buildPresetSuggestions({ categories = [], appPurpose = "" } = {}
     {
       id: createStrategyId(summaryOnly, cleanCategories),
       label: "Lean summary preset",
-      description: "Smallest useful set: understand approved activity and return compact context only.",
+      description: "Smallest useful set: understand approved activity and return compact memory only.",
       scopes: summaryOnly,
       categories: cleanCategories
     },
@@ -458,7 +458,7 @@ export const SENSITIVE_CAPTURE_RULES = Object.freeze({
 
 export const SAFETY_RULES = Object.freeze({
   blockedUseCases: [
-    "selling raw personal context",
+    "selling raw personal memory",
     "surveillance without user consent",
     "credit, employment, insurance, or housing decisions",
     "manipulative targeting",
@@ -468,7 +468,7 @@ export const SAFETY_RULES = Object.freeze({
   requiredDeveloperPromises: [
     "ask for only the scopes needed",
     "respect selected activity categories",
-    "do not sell raw memory, context, or graph data",
+    "do not sell raw memory or graph data",
     "show users where Memact is used",
     "let users disconnect access"
   ]
@@ -528,8 +528,8 @@ function buildStrategySummary(scopes, categories) {
     : scopes.includes("memory:read_evidence")
       ? "summaries and evidence cards"
       : scopes.includes("memory:read_summary")
-        ? "context summaries"
-        : "write-only context updates"
+        ? "memory summaries"
+        : "write-only memory updates"
   return `Use ${categoryText} to produce ${delivery} inside the selected scopes.`
 }
 
@@ -562,17 +562,17 @@ function permissionInputs(scope) {
   if (scope === "capture:device") return ["active app", "window title", "visible UI text when local helper is enabled"]
   if (scope === "schema:write") return ["approved evidence packets", "content units", "candidate nodes and edges"]
   if (scope === "graph:write") return ["schema packets", "evidence links", "approved nodes and edges"]
-  if (scope === "memory:write") return ["retained schema packets", "approved summaries", "evidence-backed context"]
+  if (scope === "memory:write") return ["retained schema packets", "approved summaries", "evidence-backed memory"]
   return ["compiled memory objects allowed by consent"]
 }
 
 function permissionOutputs(scope) {
-  if (scope === "memory:read_summary") return ["compact context summaries"]
+  if (scope === "memory:read_summary") return ["compact memory summaries"]
   if (scope === "memory:read_evidence") return ["evidence cards", "source snippets", "reasoning support"]
   if (scope === "memory:read_graph") return ["permitted nodes", "permitted edges", "graph metadata"]
   if (scope.startsWith("capture:")) return ["local evidence signals"]
   if (scope === "schema:write") return ["schema packets"]
-  if (scope === "graph:write") return ["context graph writes"]
+  if (scope === "graph:write") return ["memory graph writes"]
   if (scope === "memory:write") return ["retained memories"]
   return []
 }
@@ -581,7 +581,7 @@ function permissionStorageEffects(scope) {
   if (scope.startsWith("capture:")) return ["local capture evidence may be created"]
   if (scope === "schema:write") return ["schema packets may be formed"]
   if (scope === "graph:write") return ["nodes, edges, and evidence links may be written"]
-  if (scope === "memory:write") return ["approved context may be retained as memory"]
+  if (scope === "memory:write") return ["approved activity may be retained as memory"]
   return ["read-only delivery; no new storage by this permission alone"]
 }
 
