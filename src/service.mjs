@@ -619,21 +619,21 @@ function defaultFeatureRegistry() {
     {
       feature_id: "user-context-wiki",
       name: "Memory Wiki",
-      description: "Groups permitted memory into a readable wiki.",
+      description: "Groups permitted schema packets into readable sections with highlights and source trails.",
       required_scopes: ["feature:run", "memory:read_summary"],
       required_schema_types: ["*"]
     },
     {
       feature_id: "cognitive-load",
       name: "Cognitive Load",
-      description: "Estimates workload from permitted schema packets.",
+      description: "Turns permitted activity and schema packets into a workload signal apps can adapt to.",
       required_scopes: ["feature:run", "schema:read"],
       required_schema_types: ["attention", "productivity", "work"]
     },
     {
       feature_id: "research-map",
       name: "Research Map",
-      description: "Builds a map of research themes and source trails from permitted schemas.",
+      description: "Builds research themes, source trails, open questions, and next steps from permitted packets.",
       required_scopes: ["feature:run", "schema:read"],
       required_schema_types: ["research", "learning"]
     }

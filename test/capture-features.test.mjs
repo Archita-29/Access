@@ -67,7 +67,7 @@ test("feature run uses Studio runtime when available", async () => {
   })
 
   assert.equal(result.status, "ok")
-  assert.equal(Boolean(result.output.groups["research:learning"]), true)
+  assert.equal(result.output.sections[0].id, "research:learning")
   const data = await service.store.read()
   assert.equal(data.feature_runs[0].status, "ok")
 })
