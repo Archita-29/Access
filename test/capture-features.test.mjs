@@ -84,6 +84,28 @@ test("adaptive article overview runs through Studio runtime", async () => {
   assert.ok(Array.isArray(result.output.signals_used))
 })
 
+test("features can connect to an app API key and disconnect later", async () => {
+  const { service, developer, app, key } = await setupAccess(["feature:run", "memory:read_summary", "schema:read"], {
+    categories: ["reading"]
+  })
+
+  const connected = await service.connectFeature(developer.user.id, {
+    feature_id: "adaptive-article-overview",
+    app_id: app.app.id,
+    api_key_id: key.api_key.id
+  })
+  assert.equal(connected.feature_connection.feature_id, "adaptive-article-overview")
+  assert.equal(connected.feature_connection.app_id, app.app.id)
+  assert.equal(connected.feature_connection.api_key_id, key.api_key.id)
+
+  const listed = await service.listFeatureConnections(developer.user.id)
+  assert.equal(listed.feature_connections.length, 1)
+  assert.equal(listed.feature_connections[0].disconnected_at, null)
+
+  const disconnected = await service.disconnectFeature(developer.user.id, connected.feature_connection.id)
+  assert.ok(disconnected.feature_connection.disconnected_at)
+})
+
 test("schema helper routes store schema and subschemas", async () => {
   const { service, key, consent } = await setupAccess(["schema:write", "schema:read"], { categories: ["reading"] })
   const created = await service.createSchemaDefinition(key.key, {

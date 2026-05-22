@@ -254,6 +254,69 @@ export class AccessService {
     })
   }
 
+  async listFeatureConnections(userId) {
+    const data = await this.store.read()
+    assertUser(data, userId)
+    return {
+      feature_connections: data.feature_connections
+        .filter((connection) => connection.owner_user_id === userId)
+        .map(publicFeatureConnection)
+    }
+  }
+
+  async connectFeature(userId, { feature_id, app_id, api_key_id } = {}) {
+    const cleanFeatureId = String(feature_id || "").trim()
+    if (!cleanFeatureId) throw new AccessError(400, "missing_feature_id", "Feature id is required.")
+    return this.mutate(async (data) => {
+      const feature = defaultFeatureRegistry().find((item) => item.feature_id === cleanFeatureId)
+        || data.feature_registry.find((item) => item.feature_id === cleanFeatureId && item.enabled !== false)
+      if (!feature) throw new AccessError(404, "feature_not_found", "Feature not found.")
+
+      const app = data.apps.find((item) => item.id === app_id && item.owner_user_id === userId && !item.revoked_at)
+      if (!app) throw new AccessError(404, "app_not_found", "App not found.")
+
+      const activeKeys = data.api_keys
+        .filter((key) => key.app_id === app.id && key.owner_user_id === userId && !key.revoked_at)
+        .sort((first, second) => String(first.created_at).localeCompare(String(second.created_at)))
+      const apiKey = api_key_id
+        ? activeKeys.find((key) => key.id === api_key_id)
+        : activeKeys[0]
+      if (!apiKey) throw new AccessError(400, "api_key_required", "Create an API key before using this feature.")
+
+      const existing = data.feature_connections.find((item) =>
+        item.owner_user_id === userId
+        && item.app_id === app.id
+        && item.api_key_id === apiKey.id
+        && item.feature_id === cleanFeatureId
+        && !item.disconnected_at
+      )
+      if (existing) return { feature_connection: publicFeatureConnection(existing) }
+
+      const connection = {
+        id: randomId("fcn"),
+        owner_user_id: userId,
+        app_id: app.id,
+        api_key_id: apiKey.id,
+        feature_id: cleanFeatureId,
+        created_at: timestamp(this.now()),
+        disconnected_at: null
+      }
+      data.feature_connections.push(connection)
+      audit(data, userId, "feature.connect", { app_id: app.id, api_key_id: apiKey.id, feature_id: cleanFeatureId })
+      return { feature_connection: publicFeatureConnection(connection) }
+    })
+  }
+
+  async disconnectFeature(userId, connectionId) {
+    return this.mutate(async (data) => {
+      const connection = data.feature_connections.find((item) => item.id === connectionId && item.owner_user_id === userId)
+      if (!connection) throw new AccessError(404, "feature_connection_not_found", "Feature connection not found.")
+      connection.disconnected_at = timestamp(this.now())
+      audit(data, userId, "feature.disconnect", { connection_id: connection.id, feature_id: connection.feature_id })
+      return { feature_connection: publicFeatureConnection(connection) }
+    })
+  }
+
   async grantConsent(userId, { app_id, scopes = DEFAULT_APP_SCOPES, categories = DEFAULT_APP_CATEGORIES }) {
     const unknown = unknownScopes(scopes)
     if (unknown.length) {
@@ -967,6 +1030,18 @@ function publicApiKey(apiKey) {
     created_at: apiKey.created_at,
     last_used_at: apiKey.last_used_at,
     revoked_at: apiKey.revoked_at
+  }
+}
+
+function publicFeatureConnection(connection) {
+  return {
+    id: connection.id,
+    owner_user_id: connection.owner_user_id,
+    app_id: connection.app_id,
+    api_key_id: connection.api_key_id,
+    feature_id: connection.feature_id,
+    created_at: connection.created_at,
+    disconnected_at: connection.disconnected_at
   }
 }
 

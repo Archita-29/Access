@@ -77,6 +77,16 @@ test("Supabase SQL adds schema definition persistence and RPCs", async () => {
   }
 })
 
+test("Supabase SQL adds feature connection persistence", async () => {
+  const migration = await fs.readFile(new URL("../supabase/migrations/20260522110000_feature_connections.sql", import.meta.url), "utf8")
+  const fullInstall = await fs.readFile(new URL("../supabase/memact_access_full_install.sql", import.meta.url), "utf8")
+  for (const sql of [migration, fullInstall]) {
+    assert.match(sql, /memact_feature_connections/)
+    assert.match(sql, /memact_feature_connections_active_idx/)
+    assert.match(sql, /memact feature connections own rows/)
+  }
+})
+
 test("Supabase SQL stores compiled policies separately from raw permission choices", async () => {
   const migration = await fs.readFile(latestMigrationPath, "utf8")
   const fullInstall = await fs.readFile(fullInstallPath, "utf8")

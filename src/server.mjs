@@ -167,6 +167,15 @@ async function route(service, request, url, body) {
   if (request.method === "POST" && path === "/v1/api-keys/revoke") {
     return service.revokeApiKey(auth.user.id, body?.key_id)
   }
+  if (request.method === "GET" && path === "/v1/feature-connections") {
+    return service.listFeatureConnections(auth.user.id)
+  }
+  if (request.method === "POST" && path === "/v1/feature-connections") {
+    return service.connectFeature(auth.user.id, body)
+  }
+  if (request.method === "POST" && path === "/v1/feature-connections/disconnect") {
+    return service.disconnectFeature(auth.user.id, body?.connection_id)
+  }
   if (request.method === "GET" && path === "/v1/consents") {
     return service.listConsents(auth.user.id)
   }
