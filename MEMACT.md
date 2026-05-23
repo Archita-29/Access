@@ -19,7 +19,7 @@ when the Playground runtime is connected.
 
 Use:
 
-- "Memact is a playground where apps personalize based on what users choose to share."
+- "Memact is a playground where apps personalize around what users choose."
 - "Apps send signals and use features through scoped API access."
 - "Users choose what each app can use."
 
