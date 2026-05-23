@@ -41,7 +41,7 @@ export class AccessService {
     this.playgroundPath = options.playgroundPath || options.studioPath || process.env.MEMACT_PLAYGROUND_PATH || process.env.MEMACT_STUDIO_PATH || defaultPlaygroundPath()
   }
 
-  async signup({ email, password }) {
+  async signup({ email, password, account_type = "developer" }) {
     const normalizedEmail = normalizeEmail(email)
     assertPassword(password)
     return this.mutate(async (data) => {
@@ -52,6 +52,11 @@ export class AccessService {
         id: randomId("usr"),
         email: normalizedEmail,
         password_hash: await hashPassword(password),
+        account_type: normalizeAccountType(account_type),
+        account_state: "active",
+        password_pending: false,
+        created_from: "signup",
+        full_signup_completed: true,
         plan: "free_unlimited",
         created_at: timestamp(this.now()),
         updated_at: timestamp(this.now())
@@ -758,7 +763,24 @@ function defaultFeatureRegistry() {
       name: "Adaptive Article Overview",
       description: "Creates article overviews based on the article and the user's approved reading memory.",
       required_scopes: ["feature:run", "memory:read_summary", "schema:read"],
-      required_schema_types: ["reading_preferences"]
+      required_schema_types: ["reading_preferences"],
+      service: "media"
+    },
+    {
+      feature_id: "discord-channel-personalizer",
+      name: "Discord Channel Personalizer",
+      description: "Suggests Discord server channels from approved user memory and server channel context.",
+      required_scopes: ["feature:run", "memory:read_summary", "schema:read", "platform:bot"],
+      required_schema_types: ["community_preferences", "communication_preferences", "server_activity"],
+      service: "community"
+    },
+    {
+      feature_id: "community-context-brief",
+      name: "Community Context Brief",
+      description: "Summarizes approved community memory for apps and platform bots without exposing raw private activity.",
+      required_scopes: ["feature:run", "memory:read_summary", "schema:read", "platform:bot"],
+      required_schema_types: ["community_preferences", "platform_preferences", "communication_preferences"],
+      service: "community"
     },
     {
       feature_id: "user-context-wiki",
@@ -935,7 +957,12 @@ async function verifySupabaseAccessToken(token) {
     id: `supabase:${payload.id}`,
     email: payload.email,
     auth_provider: payload.app_metadata?.provider || payload.identities?.[0]?.provider || "supabase",
-    avatar_url: payload.user_metadata?.avatar_url || payload.user_metadata?.picture || ""
+    avatar_url: payload.user_metadata?.avatar_url || payload.user_metadata?.picture || "",
+    account_type: payload.user_metadata?.account_type || payload.user_metadata?.memact_account_type || "",
+    account_state: payload.user_metadata?.account_state || payload.user_metadata?.memact_account_state || "",
+    password_pending: Boolean(payload.user_metadata?.password_pending),
+    created_from: payload.user_metadata?.created_from || "",
+    full_signup_completed: payload.user_metadata?.full_signup_completed
   }
 }
 
@@ -948,6 +975,15 @@ function upsertExternalUser(data, externalUser, now) {
     user.external_auth_id = externalUser.id
     user.auth_provider = externalUser.auth_provider
     user.avatar_url = externalUser.avatar_url || user.avatar_url || ""
+    if (externalUser.account_state === "consent_shell") {
+      user.account_type = "user"
+      user.account_state = "consent_shell"
+      user.password_pending = true
+      user.created_from = user.created_from || "consent_flow"
+      user.full_signup_completed = false
+    } else if (externalUser.account_type) {
+      user.account_type = normalizeAccountType(externalUser.account_type)
+    }
     user.updated_at = timestamp(now())
     return user
   }
@@ -959,6 +995,11 @@ function upsertExternalUser(data, externalUser, now) {
     password_hash: null,
     auth_provider: externalUser.auth_provider || "supabase",
     avatar_url: externalUser.avatar_url || "",
+    account_type: externalUser.account_state === "consent_shell" ? "user" : normalizeAccountType(externalUser.account_type),
+    account_state: externalUser.account_state === "consent_shell" ? "consent_shell" : "active",
+    password_pending: externalUser.account_state === "consent_shell" ? true : Boolean(externalUser.password_pending),
+    created_from: externalUser.created_from || (externalUser.account_state === "consent_shell" ? "consent_flow" : "external_auth"),
+    full_signup_completed: externalUser.account_state === "consent_shell" ? false : externalUser.full_signup_completed !== false,
     plan: "free_unlimited",
     created_at: timestamp(now()),
     updated_at: timestamp(now())
@@ -988,9 +1029,17 @@ function publicUser(user) {
     email: user.email,
     provider: user.auth_provider || (user.external_auth_id ? "supabase" : "email"),
     avatar_url: user.avatar_url || "",
+    account_type: user.account_type || (user.account_state === "consent_shell" ? "user" : "developer"),
+    account_state: user.account_state || "active",
+    password_pending: Boolean(user.password_pending),
+    full_signup_completed: user.full_signup_completed !== false,
     plan: user.plan,
     created_at: user.created_at
   }
+}
+
+function normalizeAccountType(value) {
+  return String(value || "").trim().toLowerCase() === "user" ? "user" : "developer"
 }
 
 function publicSession(session) {

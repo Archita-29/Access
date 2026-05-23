@@ -102,11 +102,13 @@ privacy skips, extension capture, and future capture storage adapters.
 The default feature registry includes:
 
 - `user-context-wiki` / Memory Wiki
+- `adaptive-article-overview` / media service
+- `discord-channel-personalizer` / community service
 - `cognitive-load`
 - `research-map`
 
 When Playground is available through `MEMACT_PLAYGROUND_PATH` or a sibling `playground`
-folder, Access loads the feature and runs it. `MEMACT_STUDIO_PATH` still works as a compatibility fallback. If Playground is not connected,
+folder, Access loads the feature and runs it. If Playground is not connected,
 feature runs fail clearly with `feature_runtime_unavailable` instead of
 inventing output.
 

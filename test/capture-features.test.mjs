@@ -39,6 +39,9 @@ test("feature registry is listed and feature run requires feature scope", async 
   const listed = await service.listFeatures()
   assert.equal(listed.features.some((feature) => feature.feature_id === "user-context-wiki"), true)
   assert.equal(listed.features.some((feature) => feature.feature_id === "adaptive-article-overview"), true)
+  assert.equal(listed.features.some((feature) => feature.feature_id === "discord-channel-personalizer"), true)
+  assert.equal(listed.features.some((feature) => feature.feature_id === "community-context-brief"), true)
+  assert.equal(listed.features.find((feature) => feature.feature_id === "adaptive-article-overview").service, "media")
 
   await assert.rejects(
     () => service.runFeature(key.key, "user-context-wiki", {
@@ -82,6 +85,44 @@ test("adaptive article overview runs through Playground runtime", async () => {
   assert.equal(result.output.summary_style, "deep_dive")
   assert.ok(result.output.overview)
   assert.ok(Array.isArray(result.output.signals_used))
+})
+
+test("community platform features run through Playground runtime", async () => {
+  const { service, key, consent } = await setupAccess(["feature:run", "memory:read_summary", "schema:read", "platform:bot"], {
+    categories: ["community:discord"]
+  })
+  const discordResult = await service.runFeature(key.key, "discord-channel-personalizer", {
+    connection_id: consent.consent.id,
+    activity_categories: ["community:discord"],
+    user_memory: {
+      interests: ["memact", "developer tools"],
+      muted_topics: ["memes"]
+    },
+    server: {
+      channels: [
+        { id: "1", name: "memact-api", topic: "developer tools and Memact help" },
+        { id: "2", name: "memes", topic: "off-topic jokes" }
+      ]
+    }
+  })
+  assert.equal(discordResult.status, "ok")
+  assert.equal(discordResult.output.recommended_channels[0].name, "memact-api")
+
+  const briefResult = await service.runFeature(key.key, "community-context-brief", {
+    connection_id: consent.consent.id,
+    activity_categories: ["community:discord"],
+    input: {
+      platform: { platform: "discord" },
+      approved_community_activity: [
+        { channel: "memact-api", topics: ["api", "support"], summary: "User asks API support questions." }
+      ],
+      allowed_wiki_context: [
+        { source: "Memact Wiki", interests: ["api"], communication_style: "concise updates" }
+      ]
+    }
+  })
+  assert.equal(briefResult.status, "ok")
+  assert.ok(briefResult.output.topics_engaged_with.includes("api"))
 })
 
 test("features can connect to an app API key and disconnect later", async () => {

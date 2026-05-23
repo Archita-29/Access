@@ -14,6 +14,12 @@ export const SCOPE_DEFINITIONS = Object.freeze({
     description: "Allow this app to run approved Memact features.",
     grantsGraphRead: false
   },
+  "platform:bot": {
+    label: "Use platform bot",
+    description: "Allow a connected platform bot to use approved community memory for this app.",
+    grantsGraphRead: false,
+    sensitive: true
+  },
   "context:read": {
     label: "Read personalization memory",
     description: "Allow this app to receive permitted Memact memory.",
@@ -161,6 +167,38 @@ export const CATEGORY_DEFINITIONS = Object.freeze({
   "article": {
     label: "Articles",
     description: "Article pages, excerpts, topics, sources, and reading events."
+  },
+  "community:discord": {
+    label: "Discord servers",
+    description: "Server channels, public channel topics, and allowed community activity summaries."
+  },
+  "platform:discord": {
+    label: "Discord platform",
+    description: "Approved Discord bot activity, server metadata, and channel-level summaries."
+  },
+  "platform:reddit": {
+    label: "Reddit platform",
+    description: "Approved Reddit community activity, subreddit topics, and participation summaries."
+  },
+  "platform:telegram": {
+    label: "Telegram platform",
+    description: "Approved Telegram chat or group activity summaries."
+  },
+  "discord:server_activity": {
+    label: "Discord server activity",
+    description: "Approved server-level channel names, topics, and community activity summaries."
+  },
+  "reddit:community_activity": {
+    label: "Reddit community activity",
+    description: "Approved subreddit topics, public posts, and community participation summaries."
+  },
+  "telegram:chat_activity": {
+    label: "Telegram chat activity",
+    description: "Approved chat topics and group participation summaries."
+  },
+  "community": {
+    label: "Communities",
+    description: "Community spaces, server topics, group interests, and participation preferences."
   }
 })
 
@@ -257,6 +295,62 @@ export const CATEGORY_ALGORITHMS = Object.freeze({
     understand: ["summary preference", "article length preference", "topic interest"],
     schema: ["reading_preferences", "summary_style_preference", "article_length_preference"],
     memory: ["article overview preference", "preferred topics", "skipped topics"]
+  },
+  "community:discord": {
+    label: "Discord community personalization",
+    capture: ["server id", "server name", "channel names", "channel topics", "allowed public channel activity summaries"],
+    understand: ["channel interest", "muted topics", "community participation preference", "support or learning channel preference"],
+    schema: ["community_preferences", "communication_preferences", "server_activity"],
+    memory: ["preferred server channels", "topics to avoid", "community participation preferences"]
+  },
+  "platform:discord": {
+    label: "Discord bot personalization",
+    capture: ["bot install id", "server name", "channel names", "channel topics", "approved channel summaries"],
+    understand: ["community topics", "preferred response style", "collaboration signals", "moderation-safe notes"],
+    schema: ["community_preferences", "platform_preferences", "communication_preferences"],
+    memory: ["community interests", "preferred response style", "platform bot preferences"]
+  },
+  "platform:reddit": {
+    label: "Reddit community personalization",
+    capture: ["subreddit name", "public topic labels", "approved public activity summaries"],
+    understand: ["community interests", "topic preferences", "participation style"],
+    schema: ["community_preferences", "platform_preferences"],
+    memory: ["community interests", "topics followed", "topics avoided"]
+  },
+  "platform:telegram": {
+    label: "Telegram bot personalization",
+    capture: ["group name", "topic labels", "approved group activity summaries"],
+    understand: ["group interests", "response style", "collaboration signals"],
+    schema: ["community_preferences", "platform_preferences", "communication_preferences"],
+    memory: ["community interests", "preferred response style"]
+  },
+  "discord:server_activity": {
+    label: "Discord server activity personalization",
+    capture: ["channel names", "channel topics", "approved server activity summaries"],
+    understand: ["channel interest", "community participation preference", "support or learning channel preference"],
+    schema: ["community_preferences", "server_activity"],
+    memory: ["preferred server channels", "community participation preferences"]
+  },
+  "reddit:community_activity": {
+    label: "Reddit community activity personalization",
+    capture: ["subreddit topics", "approved public activity summaries"],
+    understand: ["topic interests", "community preference", "participation style"],
+    schema: ["community_preferences", "platform_preferences"],
+    memory: ["topics followed", "topics to avoid"]
+  },
+  "telegram:chat_activity": {
+    label: "Telegram chat activity personalization",
+    capture: ["group topics", "approved chat activity summaries"],
+    understand: ["topic interests", "response style", "collaboration signals"],
+    schema: ["community_preferences", "platform_preferences"],
+    memory: ["community interests", "preferred response style"]
+  },
+  "community": {
+    label: "Community personalization",
+    capture: ["community name", "public topic labels", "allowed participation summaries", "channel or group metadata"],
+    understand: ["community interest", "topics followed", "topics skipped", "participation style"],
+    schema: ["community_preferences", "communication_preferences"],
+    memory: ["community preferences", "topics followed", "topics to avoid"]
   }
 })
 
@@ -585,7 +679,8 @@ function buildCategoryPermissionMatrix() {
 function permissionStatusForCategory(scope, category) {
   if (scope === "memory:read_graph") return "risky"
   if (scope === "capture:event_write" || scope === "feature:list") return "recommended"
-  if (scope === "schema:register") return ["reading", "news", "article", "web:news", "web:research"].includes(category) ? "allowed" : "risky"
+  if (scope === "platform:bot") return category.startsWith("platform:") || category.startsWith("discord:") || category.startsWith("reddit:") || category.startsWith("telegram:") || category === "community:discord" ? "recommended" : "blocked"
+  if (scope === "schema:register") return ["reading", "news", "article", "community", "community:discord", "web:news", "web:research"].includes(category) ? "allowed" : "risky"
   if (scope === "capture:device" && !["dev:code", "ai:assistant", "work:docs"].includes(category)) return "risky"
   if (scope === "capture:media") return category.startsWith("media:") ? "recommended" : category === "web:social" ? "allowed" : "blocked"
   if (scope === "capture:webpage") return category.startsWith("web:") || ["ai:assistant", "dev:code", "work:docs"].includes(category) ? "recommended" : "allowed"
