@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "Memact access layer for apps, users, consent, API keys, capture events, feature access, and context-safe permissions.",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "BUSL-1.1",
   "type": "module",
   "main": "./src/server.mjs",
   "exports": {
