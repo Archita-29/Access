@@ -47,13 +47,13 @@ export const SCOPE_DEFINITIONS = Object.freeze({
     sensitive: true
   },
   "schema:write": {
-    label: "Create schema packets",
-    description: "Allow Memact to organize retained memory into schema packets.",
+    label: "Create context proposals",
+    description: "Allow Memact to organize approved signals into context proposals. Legacy scope name.",
     grantsGraphRead: false
   },
   "schema:read": {
-    label: "Read schema summaries",
-    description: "Allow this app to read permitted schema packet summaries.",
+    label: "Read context summaries",
+    description: "Allow this app to read permitted context summaries. Legacy scope name.",
     grantsGraphRead: false
   },
   "graph:write": {
@@ -84,8 +84,8 @@ export const SCOPE_DEFINITIONS = Object.freeze({
     sensitive: true
   },
   "schema:register": {
-    label: "Register schemas",
-    description: "Allow this app to register schema definitions and subschemas.",
+    label: "Register context categories",
+    description: "Allow this app to register context category definitions. Legacy scope name.",
     grantsGraphRead: false
   },
 })

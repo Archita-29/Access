@@ -591,7 +591,7 @@ export class AccessService {
   async createSchemaDefinition(apiKey, body = {}, options = {}) {
     const access = await this.verifyApiAccess(apiKey, ["schema:write"], body.category ? [body.category] : [], options.connectionId || body.connection_id || "")
     const schemaId = normalizeSchemaId(body.schema_id || body.id)
-    if (!schemaId) throw new AccessError(400, "missing_schema_id", "Schema id is required.")
+    if (!schemaId) throw new AccessError(400, "missing_schema_id", "Context id is required.")
     const schema = {
       schema_id: schemaId,
       app_id: access.app.id,
@@ -612,7 +612,7 @@ export class AccessService {
     const access = await this.verifyApiAccess(apiKey, ["schema:write"], [], options.connectionId || body.connection_id || "")
     const cleanSchemaId = normalizeSchemaId(schemaId)
     const subSchemaId = normalizeSchemaId(body.sub_schema_id || body.subschema_id || body.id)
-    if (!cleanSchemaId) throw new AccessError(400, "missing_schema_id", "Schema id is required.")
+    if (!cleanSchemaId) throw new AccessError(400, "missing_schema_id", "Context id is required.")
     if (!subSchemaId) throw new AccessError(400, "missing_subschema_id", "Subschema id is required.")
     const subSchema = {
       schema_id: cleanSchemaId,
@@ -624,7 +624,7 @@ export class AccessService {
     }
     return this.mutate(async (data) => {
       const schemaExists = data.schema_definitions.some((schema) => schema.app_id === access.app.id && schema.schema_id === cleanSchemaId)
-      if (!schemaExists) throw new AccessError(404, "schema_not_found", "Schema definition not found.")
+      if (!schemaExists) throw new AccessError(404, "schema_not_found", "Context category not found.")
       data.subschema_definitions = data.subschema_definitions.filter((item) => !(item.app_id === access.app.id && item.schema_id === cleanSchemaId && item.sub_schema_id === subSchemaId))
       data.subschema_definitions.push(subSchema)
       recordUsageEvent(data, "schema.subschema.upsert", { app_id: access.app.id, schema_id: cleanSchemaId, sub_schema_id: subSchemaId }, this.now)
@@ -637,7 +637,7 @@ export class AccessService {
     const cleanSchemaId = normalizeSchemaId(schemaId)
     const data = await this.store.read()
     const schema = data.schema_definitions.find((item) => item.schema_id === cleanSchemaId && (!item.app_id || item.app_id === access.app.id))
-    if (!schema) throw new AccessError(404, "schema_not_found", "Schema definition not found.")
+    if (!schema) throw new AccessError(404, "schema_not_found", "Context category not found.")
     return {
       schema: {
         ...schema,
@@ -822,14 +822,14 @@ function defaultFeatureRegistry() {
     {
       feature_id: "user-context-wiki",
       name: "Memory Wiki",
-      description: "Groups permitted schema packets into readable sections with highlights and source trails.",
+      description: "Groups permitted context into readable sections with highlights and source trails.",
       required_scopes: ["feature:run", "memory:read_summary"],
       required_schema_types: ["*"]
     },
     {
       feature_id: "cognitive-load",
       name: "Cognitive Load",
-      description: "Turns permitted activity and schema packets into a workload signal apps can adapt to.",
+      description: "Turns permitted activity and context into a workload signal apps can adapt to.",
       required_scopes: ["feature:run", "schema:read"],
       required_schema_types: ["attention", "productivity", "work"]
     },

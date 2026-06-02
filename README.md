@@ -6,15 +6,15 @@ It handles apps, users, consent, API keys, scopes, activity categories, feature
 access, capture ingestion checks, and audit/usage records.
 
 Access is the backend front door for Memact. It is not the capture engine,
-meaning engine, schema engine, feature runtime, or memory store.
+meaning engine, context engine, feature runtime, or memory store.
 
 In this repo, "works" means Access can verify an app, accept permitted capture
 events, list available features, enforce feature scopes, and return permitted
-schema/memory summaries from its store. If a deeper runtime is not connected,
+context/memory summaries from its store. If a deeper runtime is not connected,
 Access returns a clear error instead of pretending it produced a feature result.
 
 For the playground flow, apps send permitted signals to Access. Access gates the
-request, Capture records the activity, Schema and Memory prepare useful memory,
+request, Context and Memory prepare useful memory,
 and Playground features can return personalization help back to the app.
 
 ## What This Repo Owns
@@ -25,14 +25,14 @@ and Playground features can return personalization help back to the app.
 - Scope and category policy.
 - Capture-event ingestion checks.
 - Feature access checks.
-- Schema and memory summary access checks.
+- Context and memory summary access checks.
 - Audit and usage records.
 
 ## What This Repo Does Not Own
 
 - Browser extension capture logic.
 - Semantic inference.
-- Schema packet formation.
+- Context proposal formation.
 - Durable memory ranking.
 - Playground feature implementations.
 - Archived Intent routes as a core product path.
@@ -41,9 +41,7 @@ and Playground features can return personalization help back to the app.
 
 ```text
 Access checks
--> Capture receives
--> Inference understands
--> Schema organizes
+-> Context organizes
 -> Memory stores
 -> Playground features run
 -> Apps and users use results
@@ -62,9 +60,11 @@ POST /v1/capture/events
 GET  /v1/capture/events
 GET  /v1/features
 POST /v1/features/:featureId/run
-GET  /v1/schemas
+GET  /v1/context
 GET  /v1/memory
 ```
+
+`/v1/schemas` still works as a compatibility alias for older SDKs and PRs.
 
 `POST /v1/intent/predict` is no longer a core route and returns `410`.
 
@@ -102,8 +102,8 @@ privacy skips, extension capture, and future capture storage adapters.
 The default feature registry includes:
 
 - `user-context-wiki` / Memory Wiki
-- `adaptive-article-overview` / media service
-- `discord-channel-personalizer` / community service
+- media/articles category support
+- community/bot category support
 - `cognitive-load`
 - `research-map`
 
@@ -124,13 +124,13 @@ The backend is currently real in these places:
 - Feature registry is returned through `GET /v1/features`.
 - Feature runs require `feature:run`.
 - Playground features run locally when the Playground runtime is available.
-- Schema and memory summary routes require their read scopes.
+- Context and memory summary routes require their read scopes.
 - The old intent route is not silently used as core API.
 
 The backend is intentionally not pretending in these places:
 
 - Playground feature execution is not faked if the runtime is unavailable.
-- Capture, Inference, Schema, and Memory stay separate repos instead of being
+- Context and Memory stay separate repos instead of being
   copy-pasted into Access.
 - Supabase remains an auth/storage integration path, not the product identity.
 
