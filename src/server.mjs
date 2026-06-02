@@ -141,6 +141,9 @@ async function route(service, request, url, body) {
       activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
     })
   }
+  if (request.method === "GET" && path === "/v1/credits") {
+    return service.listCredits(readMemactApiKey(request))
+  }
   if (request.method === "POST" && path === "/v1/wiki/proposals") {
     return service.proposeWikiContext(readMemactApiKey(request), body, {
       connectionId: request.headers["x-memact-connection-id"]

@@ -648,9 +648,8 @@ export class AccessService {
 
   async listMemory(apiKey, options = {}) {
     const access = await this.verifyApiAccess(apiKey, ["memory:read_summary"], options.activity_categories || [], options.connection_id || "")
-    const data = await this.store.read()
-    return {
-      memory: data.memory_records
+    return this.mutate(async (data) => {
+      const memory = data.memory_records
         .filter((record) => !record.app_id || record.app_id === access.app.id)
         .map((record) => ({
           memory_id: record.memory_id || record.id,
@@ -659,44 +658,72 @@ export class AccessService {
           confidence: record.confidence,
           created_at: record.created_at
         }))
-    }
+      const credit_event = recordCreditEvent(data, {
+        app_id: access.app.id,
+        connection_id: access.connection_id,
+        amount: -1,
+        reason: "context_read",
+        detail: "App read allowed context summary"
+      }, this.now)
+      return {
+        memory,
+        credits: creditSummary(data, access.app.id),
+        credit_event
+      }
+    })
   }
 
   async proposeWikiContext(apiKey, body = {}, options = {}) {
-    const proposalInput = body.proposal && typeof body.proposal === "object" ? body.proposal : body
+    const proposalInput = normalizeContextSubmission(body)
     const category = String(proposalInput.category || body.category || "").trim()
     const connectionId = body.connection_id || proposalInput.connection_id || options.connectionId || ""
     if (!category) throw new AccessError(400, "missing_category", "Wiki proposal category is required.")
     const access = await this.verifyApiAccess(apiKey, ["context:write"], [category], connectionId)
     const now = timestamp(this.now())
+    const sourceTrail = normalizeSourceTrail(proposalInput)
+    const contextValue = proposalInput.kind === "raw_signal"
+      ? contextFromRawSignal(proposalInput)
+      : sanitizeProposalContext(proposalInput.context || proposalInput.value || {})
     const proposal = {
       entry_id: randomId("wkp"),
       schema_version: "memact.app_context_proposal.v0",
+      input_kind: proposalInput.kind,
       app_id: access.app.id,
       connection_id: access.connection_id,
       user_id: access.user_id,
       source_app: String(proposalInput.source_app || access.app.name || "Connected app").trim().slice(0, 120),
       source_type: normalizeProposalSourceType(proposalInput.source_type),
       category,
-      title: String(proposalInput.title || proposalInput.context?.title || `${category} context`).trim().slice(0, 160),
-      context: sanitizeProposalContext(proposalInput.context || proposalInput.value || {}),
-      value: sanitizeProposalContext(proposalInput.value || proposalInput.context || {}),
+      title: String(proposalInput.title || contextValue.title || `${category} context`).trim().slice(0, 160),
+      context: contextValue,
+      value: contextValue,
       status: "pending",
       visibility: "private",
       user_visible: proposalInput.user_visible !== false,
-      confidence: normalizeConfidence(proposalInput.confidence),
+      confidence: normalizeConfidence(proposalInput.confidence ?? (proposalInput.kind === "raw_signal" ? 0.35 : 0.65)),
       proposed_at: proposalInput.proposed_at || now,
       created_at: now,
       updated_at: now,
-      source_trail: Array.isArray(proposalInput.source_trail) ? proposalInput.source_trail.slice(0, 20) : [],
+      source_trail: sourceTrail,
       competing_interpretations: Array.isArray(proposalInput.competing_interpretations) ? proposalInput.competing_interpretations.slice(0, 10) : [],
       contradictions: Array.isArray(proposalInput.contradictions) ? proposalInput.contradictions.slice(0, 10) : []
     }
     return this.mutate(async (data) => {
       data.wiki_proposals.push(proposal)
       recordUsageEvent(data, "wiki.proposal.create", { app_id: access.app.id, category }, this.now)
-      return { accepted: true, proposal }
+      const credit_event = recordCreditEvent(data, creditForProposal(access.app.id, access.connection_id, proposal), this.now)
+      return { accepted: true, proposal, credits: creditSummary(data, access.app.id), credit_event }
     })
+  }
+
+  async listCredits(apiKey) {
+    const data = await this.store.read()
+    const keyHash = hashSecret(apiKey || "")
+    const key = data.api_keys.find((item) => item.key_hash === keyHash && !item.revoked_at)
+    if (!key) throw new AccessError(401, "invalid_api_key", "API key is invalid or revoked.")
+    const app = data.apps.find((item) => item.id === key.app_id && !item.revoked_at)
+    if (!app) throw new AccessError(401, "app_revoked", "App is missing or revoked.")
+    return creditSummary(data, app.id)
   }
 
   async recordUsage(action, details = {}) {
@@ -1129,6 +1156,94 @@ function publicFeatureConnection(connection) {
     feature_id: connection.feature_id,
     created_at: connection.created_at,
     disconnected_at: connection.disconnected_at
+  }
+}
+
+function normalizeContextSubmission(body = {}) {
+  const raw = body.raw_signal || body.signal || body.activity_signal
+  if (raw && typeof raw === "object") {
+    return {
+      ...raw,
+      kind: "raw_signal",
+      connection_id: body.connection_id || raw.connection_id,
+      category: raw.category || body.category,
+      source_app: raw.source_app || body.source_app,
+      source_type: "app"
+    }
+  }
+  const proposal = body.proposal && typeof body.proposal === "object" ? body.proposal : body
+  return {
+    ...proposal,
+    kind: proposal.kind || proposal.input_kind || "context_proposal"
+  }
+}
+
+function contextFromRawSignal(signal = {}) {
+  const payload = sanitizeProposalContext(signal.payload || signal.evidence || signal.context || {})
+  const eventType = String(signal.event_type || signal.type || "activity").trim().slice(0, 80)
+  const category = String(signal.category || "general").trim()
+  return {
+    title: signal.title || `Possible ${category} context`,
+    summary: `Raw ${eventType} signal needs user review before it becomes memory.`,
+    signal_type: eventType,
+    evidence: payload,
+    review_note: "Activity is not identity. This should stay pending until the user accepts, edits, or rejects it."
+  }
+}
+
+function normalizeSourceTrail(input = {}) {
+  if (Array.isArray(input.source_trail)) return input.source_trail.slice(0, 20).map(sanitizeProposalContext)
+  if (input.kind === "raw_signal") {
+    return [{
+      type: "raw_signal",
+      event_type: String(input.event_type || input.type || "activity").slice(0, 80),
+      occurred_at: input.occurred_at || input.timestamp || null,
+      evidence: sanitizeProposalContext(input.payload || input.evidence || {})
+    }]
+  }
+  const evidence = input.evidence || input.sources || input.context?.evidence
+  return evidence ? [{ type: "app_evidence", evidence: sanitizeProposalValue(evidence) }] : []
+}
+
+function creditForProposal(appId, connectionId, proposal) {
+  const hasEvidence = proposal.source_trail?.length > 0
+  const amount = proposal.input_kind === "raw_signal" ? 1 : hasEvidence ? 4 : 2
+  return {
+    app_id: appId,
+    connection_id: connectionId,
+    amount,
+    reason: proposal.input_kind === "raw_signal" ? "raw_signal_to_context" : hasEvidence ? "context_with_evidence" : "context_without_evidence",
+    detail: proposal.input_kind === "raw_signal"
+      ? "Raw signal accepted for Wiki review"
+      : hasEvidence
+        ? "Context proposal included evidence"
+        : "Context proposal needs stronger evidence"
+  }
+}
+
+function recordCreditEvent(data, { app_id, connection_id = "", amount = 0, reason = "", detail = "" } = {}, now) {
+  const event = {
+    id: randomId("crd"),
+    app_id,
+    connection_id,
+    amount: Number(amount) || 0,
+    reason,
+    detail,
+    created_at: timestamp(now())
+  }
+  data.credit_events.push(event)
+  if (data.credit_events.length > 10000) {
+    data.credit_events.splice(0, data.credit_events.length - 10000)
+  }
+  return event
+}
+
+function creditSummary(data, appId) {
+  const events = data.credit_events.filter((event) => event.app_id === appId)
+  return {
+    app_id: appId,
+    balance: events.reduce((sum, event) => sum + Number(event.amount || 0), 0),
+    events: events.slice(-50)
   }
 }
 

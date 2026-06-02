@@ -62,6 +62,7 @@ GET  /v1/features
 POST /v1/features/:featureId/run
 GET  /v1/context
 GET  /v1/memory
+GET  /v1/credits
 ```
 
 `/v1/schemas` still works as a compatibility alias for older SDKs and PRs.
@@ -96,6 +97,22 @@ event.
 Accepted events are stored in the Access store today so the gateway can be
 tested end to end. Capture remains the repo that owns capture normalization,
 privacy skips, extension capture, and future capture storage adapters.
+
+## Context proposals and credits
+
+Apps can send either:
+
+- raw signals, such as a music replay, workout completion, or saved product
+- context proposals, such as "prefers strength workouts", backed by evidence
+
+Access checks the app key, connection, scopes, and categories before creating a
+pending Wiki proposal. Raw signals earn a smaller app credit bonus because
+Memact still needs to shape them. Context proposals with evidence earn a larger
+bonus. Reading allowed context spends credits.
+
+Credits are simple developer-side accounting, not a user-facing billing system.
+Users mainly see the Wiki: what apps know, what they propose, and what the user
+can accept, edit, reject, or delete.
 
 ## Features
 
