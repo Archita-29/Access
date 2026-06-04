@@ -186,19 +186,19 @@ as $$
         'grantsGraphRead', false
       ),
       'memory:read_summary', jsonb_build_object(
-        'label', 'Read context summaries',
-        'description', 'Allow the app to receive compact summaries of approved user context.',
+        'label', 'Read memory summaries',
+        'description', 'Allow the app to receive compact summaries of approved user memory.',
         'grantsGraphRead', false
       ),
       'memory:read_evidence', jsonb_build_object(
         'label', 'Read evidence cards',
-        'description', 'Allow the app to receive approved evidence snippets that explain the context.',
+        'description', 'Allow the app to receive approved evidence snippets that explain the memory.',
         'grantsGraphRead', false,
         'sensitive', true
       ),
       'memory:read_graph', jsonb_build_object(
-        'label', 'Read context graph',
-        'description', 'Allow the app to receive permitted nodes and edges about approved user context.',
+        'label', 'Read memory graph',
+        'description', 'Allow the app to receive permitted nodes and edges about approved user memory.',
         'grantsGraphRead', true,
         'sensitive', true
       )
@@ -1078,14 +1078,14 @@ as $$
       'schema:write', jsonb_build_object('label', 'Create understanding schemas', 'description', 'Turn retained evidence into schema packets for understanding.', 'grantsGraphRead', false),
       'graph:write', jsonb_build_object('label', 'Write context graph', 'description', 'Store nodes, edges, and evidence packets that describe user context for this app.', 'grantsGraphRead', false),
       'memory:write', jsonb_build_object('label', 'Write memory', 'description', 'Retain approved context as memory.', 'grantsGraphRead', false),
-      'memory:read_summary', jsonb_build_object('label', 'Read context summaries', 'description', 'Receive compact summaries of approved user context.', 'grantsGraphRead', false),
-      'memory:read_evidence', jsonb_build_object('label', 'Read evidence cards', 'description', 'Receive approved evidence snippets that explain the context.', 'grantsGraphRead', false, 'sensitive', true),
-      'memory:read_graph', jsonb_build_object('label', 'Read context graph', 'description', 'Receive permitted nodes and edges about approved user context.', 'grantsGraphRead', true, 'sensitive', true),
-      'capture:event_write', jsonb_build_object('label', 'Send app signals', 'description', 'Send app or site events to Memact after access is approved.', 'grantsGraphRead', false),
-      'feature:list', jsonb_build_object('label', 'List features', 'description', 'See which Memact features this app can request.', 'grantsGraphRead', false),
-      'feature:run', jsonb_build_object('label', 'Run features', 'description', 'Use approved Memact features with permitted context.', 'grantsGraphRead', false),
-      'context:read', jsonb_build_object('label', 'Read context', 'description', 'Receive permitted context returned by Memact features.', 'grantsGraphRead', false),
-      'context:write', jsonb_build_object('label', 'Write context', 'description', 'Contribute approved app context to Memact.', 'grantsGraphRead', false),
+      'memory:read_summary', jsonb_build_object('label', 'Read memory summaries', 'description', 'Receive compact summaries of approved user memory.', 'grantsGraphRead', false),
+      'memory:read_evidence', jsonb_build_object('label', 'Read evidence cards', 'description', 'Receive approved evidence snippets that explain the memory.', 'grantsGraphRead', false, 'sensitive', true),
+      'memory:read_graph', jsonb_build_object('label', 'Read memory graph', 'description', 'Receive permitted nodes and edges about approved user memory.', 'grantsGraphRead', true, 'sensitive', true),
+      'capture:event_write', jsonb_build_object('label', 'Send app activity', 'description', 'Send approved app activity for user review.', 'grantsGraphRead', false),
+      'feature:list', jsonb_build_object('label', 'List older features', 'description', 'Compatibility scope for older feature integrations.', 'grantsGraphRead', false),
+      'feature:run', jsonb_build_object('label', 'Run older features', 'description', 'Compatibility scope for older feature integrations.', 'grantsGraphRead', false),
+      'context:read', jsonb_build_object('label', 'Read allowed memory', 'description', 'Receive memory the user approved for this category.', 'grantsGraphRead', false),
+      'context:write', jsonb_build_object('label', 'Suggest memory', 'description', 'Suggest memory the user can accept, edit, reject, or delete.', 'grantsGraphRead', false),
       'schema:read', jsonb_build_object('label', 'Read schema packets', 'description', 'Use permitted schema packet summaries for features.', 'grantsGraphRead', false)
     ),
     'activity_categories', jsonb_build_object(
@@ -1589,9 +1589,9 @@ as $$
   select jsonb_build_object(
     'id', 'understanding_' || substr(encode(extensions.digest(array_to_string((select scopes from clean), '+') || '__' || array_to_string((select categories from clean), '+'), 'sha256'), 'hex'), 1, 12),
     'product', 'memact',
-    'tagline', 'Personalization made better',
-    'subtagline', 'with Memact',
-    'summary', 'Use permitted activity categories to build user-controlled context for apps and features.',
+    'tagline', 'Your Identity. Your Choice.',
+    'subtagline', 'See what apps know about you and control it.',
+    'summary', 'Use permitted categories to suggest memory and return only allowed memory to apps.',
     'scopes', to_jsonb((select scopes from clean)),
     'categories', to_jsonb((select categories from clean)),
     'category_algorithms', coalesce((select jsonb_agg(algorithm) from category_rows), '[]'::jsonb),
@@ -1601,18 +1601,18 @@ as $$
     ),
     'understanding_plan', jsonb_build_object(
       'outputs', coalesce((select jsonb_agg(distinct value) from category_rows, jsonb_array_elements_text(algorithm->'understand') value), '[]'::jsonb),
-      'schema_packets', case when 'schema:write' = any((select scopes from clean)) then coalesce((select jsonb_agg(distinct value) from category_rows, jsonb_array_elements_text(algorithm->'schema') value), '[]'::jsonb) else '[]'::jsonb end,
-      'graph_write', 'graph:write' = any((select scopes from clean)),
-      'memory_write', 'memory:write' = any((select scopes from clean))
+      'schema_packets', case when (select 'schema:write' = any(scopes) from clean) then coalesce((select jsonb_agg(distinct value) from category_rows, jsonb_array_elements_text(algorithm->'schema') value), '[]'::jsonb) else '[]'::jsonb end,
+      'graph_write', (select 'graph:write' = any(scopes) from clean),
+      'memory_write', (select 'memory:write' = any(scopes) from clean)
     ),
     'delivery_plan', jsonb_build_object(
-      'summaries', 'memory:read_summary' = any((select scopes from clean)),
-      'evidence_cards', 'memory:read_evidence' = any((select scopes from clean)),
-      'graph_objects', 'memory:read_graph' = any((select scopes from clean)),
-      'feature_runs', 'feature:run' = any((select scopes from clean))
+      'summaries', (select 'memory:read_summary' = any(scopes) from clean),
+      'evidence_cards', (select 'memory:read_evidence' = any(scopes) from clean),
+      'graph_objects', (select 'memory:read_graph' = any(scopes) from clean),
+      'feature_runs', (select 'feature:run' = any(scopes) from clean)
     ),
     'storage_plan', jsonb_build_object(
-      'default', jsonb_build_object('id', 'local-first-memory', 'label', 'Local-first memory', 'description', 'Capture packets and raw evidence stay local by default. Apps receive only verified understanding allowed by consent.'),
+      'default', jsonb_build_object('id', 'local-first-memory', 'label', 'Local-first memory', 'description', 'Sensitive evidence stays local by default. Apps receive only memory allowed by consent.'),
       'future_user_cloud', jsonb_build_object('id', 'user-owned-cloud-memory', 'label', 'User-owned cloud memory', 'status', 'planned', 'description', 'Users can later choose personal cloud storage through remote memory adapters without changing the API contract.')
     )
   )
@@ -1716,13 +1716,13 @@ as $$
     'id', 'policy_' || substr(encode(extensions.digest(coalesce(app_id_input::text, '') || '__' || array_to_string((select scopes from clean), '+') || '__' || array_to_string((select categories from clean), '+') || '__' || (select purpose from clean), 'sha256'), 'hex'), 1, 12),
     'app_id', app_id_input,
     'product', 'memact',
-    'tagline', 'Personalization made better',
-    'subtagline', 'with Memact',
+    'tagline', 'Your Identity. Your Choice.',
+    'subtagline', 'See what apps know about you and control it.',
     'purpose', (select purpose from clean),
     'scopes', to_jsonb((select scopes from clean)),
     'categories', to_jsonb((select categories from clean)),
     'strategy', public.memact_understanding_strategy((select scopes from clean), (select categories from clean)),
-    'warnings', case when 'memory:read_graph' = any((select scopes from clean)) or 'capture:device' = any((select scopes from clean)) then to_jsonb(array['This policy includes sensitive permissions. Explain why users need them.']::text[]) else '[]'::jsonb end,
+    'warnings', case when (select 'memory:read_graph' = any(scopes) or 'capture:device' = any(scopes) from clean) then to_jsonb(array['This policy includes sensitive permissions. Explain why users need them.']::text[]) else '[]'::jsonb end,
     'storage', jsonb_build_object(
       'default', jsonb_build_object('id', 'local-first-memory', 'label', 'Local-first memory'),
       'future_user_cloud', jsonb_build_object('id', 'user-owned-cloud-memory', 'label', 'User-owned cloud memory', 'status', 'planned', 'purpose', 'cross-platform sync to user-owned storage')
