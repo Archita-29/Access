@@ -230,6 +230,52 @@ test("wiki proposals require context write and stay pending for user control", a
   assert.equal(data.wiki_proposals.length, 1)
 })
 
+test("raw signals become pending context proposals with smaller credit bonus", async () => {
+  const { service, key, consent, app } = await setupAccess(["context:write", "memory:read_summary"], { categories: ["fitness"] })
+  const raw = await service.proposeWikiContext(key.key, {
+    connection_id: consent.consent.id,
+    raw_signal: {
+      category: "fitness",
+      event_type: "workout_completed",
+      payload: {
+        workout_type: "strength",
+        password: "should not persist"
+      }
+    }
+  })
+
+  assert.equal(raw.accepted, true)
+  assert.equal(raw.proposal.input_kind, "raw_signal")
+  assert.equal(raw.proposal.status, "pending")
+  assert.equal(raw.proposal.confidence, 0.35)
+  assert.equal(raw.proposal.context.review_note.includes("Activity is not identity"), true)
+  assert.equal(Object.hasOwn(raw.proposal.context.evidence, "password"), false)
+  assert.equal(raw.credit_event.amount, 1)
+
+  const direct = await service.proposeWikiContext(key.key, {
+    connection_id: consent.consent.id,
+    proposal: {
+      category: "fitness",
+      title: "Prefers strength workouts",
+      context: { preference: "strength workouts" },
+      source_trail: [{ type: "app_evidence", evidence: ["4 accepted workout logs"] }]
+    }
+  })
+  assert.equal(direct.credit_event.amount, 4)
+  assert.equal(direct.credits.balance, 5)
+
+  const memory = await service.listMemory(key.key, {
+    connection_id: consent.consent.id,
+    activity_categories: ["fitness"]
+  })
+  assert.equal(memory.credit_event.amount, -1)
+  assert.equal(memory.credits.balance, 4)
+
+  const credits = await service.listCredits(key.key)
+  assert.equal(credits.app_id, app.app.id)
+  assert.equal(credits.balance, 4)
+})
+
 async function setupAccess(scopes, options = {}) {
   const service = new AccessService(new MemoryStore(), () => new Date(), options)
   const developer = await service.signup({ email: `dev-${Math.random()}@example.com`, password: "long password" })

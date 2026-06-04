@@ -77,9 +77,9 @@ as $$
   select jsonb_build_object(
     'id', 'understanding_' || substr(encode(extensions.digest(array_to_string((select scopes from clean), '+') || '__' || array_to_string((select categories from clean), '+'), 'sha256'), 'hex'), 1, 12),
     'product', 'memact',
-    'tagline', 'Personalization made better',
-    'subtagline', 'with Memact',
-    'summary', 'Use permitted activity categories to build user-controlled context for apps and features.',
+    'tagline', 'Your Identity. Your Choice.',
+    'subtagline', 'See what apps know about you and control it.',
+    'summary', 'Use permitted categories to suggest memory and return only allowed memory to apps.',
     'scopes', to_jsonb((select scopes from clean)),
     'categories', to_jsonb((select categories from clean)),
     'category_algorithms', coalesce((select jsonb_agg(algorithm) from category_rows), '[]'::jsonb),
@@ -89,17 +89,17 @@ as $$
     ),
     'understanding_plan', jsonb_build_object(
       'outputs', coalesce((select jsonb_agg(distinct value) from category_rows, jsonb_array_elements_text(algorithm->'understand') value), '[]'::jsonb),
-      'schema_packets', case when 'schema:write' = any((select scopes from clean)) then coalesce((select jsonb_agg(distinct value) from category_rows, jsonb_array_elements_text(algorithm->'schema') value), '[]'::jsonb) else '[]'::jsonb end,
-      'graph_write', 'graph:write' = any((select scopes from clean)),
-      'memory_write', 'memory:write' = any((select scopes from clean))
+      'schema_packets', case when (select 'schema:write' = any(scopes) from clean) then coalesce((select jsonb_agg(distinct value) from category_rows, jsonb_array_elements_text(algorithm->'schema') value), '[]'::jsonb) else '[]'::jsonb end,
+      'graph_write', (select 'graph:write' = any(scopes) from clean),
+      'memory_write', (select 'memory:write' = any(scopes) from clean)
     ),
     'delivery_plan', jsonb_build_object(
-      'summaries', 'memory:read_summary' = any((select scopes from clean)),
-      'evidence_cards', 'memory:read_evidence' = any((select scopes from clean)),
-      'graph_objects', 'memory:read_graph' = any((select scopes from clean))
+      'summaries', (select 'memory:read_summary' = any(scopes) from clean),
+      'evidence_cards', (select 'memory:read_evidence' = any(scopes) from clean),
+      'graph_objects', (select 'memory:read_graph' = any(scopes) from clean)
     ),
     'storage_plan', jsonb_build_object(
-      'default', jsonb_build_object('id', 'local-first-memory', 'label', 'Local-first memory', 'description', 'Capture packets and raw evidence stay local by default. Apps receive only verified understanding allowed by consent.'),
+      'default', jsonb_build_object('id', 'local-first-memory', 'label', 'Local-first memory', 'description', 'Sensitive evidence stays local by default. Apps receive only memory allowed by consent.'),
       'future_user_cloud', jsonb_build_object('id', 'user-owned-cloud-memory', 'label', 'User-owned cloud memory', 'status', 'planned', 'description', 'Users can later choose personal cloud storage through remote memory adapters without changing the API contract.')
     )
   )

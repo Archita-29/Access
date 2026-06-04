@@ -97,7 +97,7 @@ async function route(service, request, url, body) {
     const featureId = decodeURIComponent(path.slice("/v1/features/".length, -"/run".length))
     return service.runFeature(readMemactApiKey(request), featureId, body)
   }
-  if (request.method === "GET" && path === "/v1/schemas") {
+  if (request.method === "GET" && (path === "/v1/context" || path === "/v1/schemas")) {
     if (usesSupabaseVerification()) {
       return listSupabaseSchemas(request, url)
     }
@@ -106,7 +106,7 @@ async function route(service, request, url, body) {
       activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
     })
   }
-  if (request.method === "POST" && path === "/v1/schemas") {
+  if (request.method === "POST" && (path === "/v1/context" || path === "/v1/schemas")) {
     if (usesSupabaseVerification()) {
       return upsertSupabaseSchema(request, body)
     }
@@ -114,8 +114,8 @@ async function route(service, request, url, body) {
       connectionId: request.headers["x-memact-connection-id"]
     })
   }
-  if (request.method === "GET" && path.startsWith("/v1/schemas/") && !path.endsWith("/subschemas")) {
-    const schemaId = decodeURIComponent(path.slice("/v1/schemas/".length))
+  if (request.method === "GET" && isContextDefinitionPath(path)) {
+    const schemaId = decodeURIComponent(path.slice(contextRoutePrefix(path).length))
     if (usesSupabaseVerification()) {
       return getSupabaseSchema(request, url, schemaId)
     }
@@ -124,8 +124,10 @@ async function route(service, request, url, body) {
       activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
     })
   }
-  if (request.method === "POST" && path.startsWith("/v1/schemas/") && path.endsWith("/subschemas")) {
-    const schemaId = decodeURIComponent(path.slice("/v1/schemas/".length, -"/subschemas".length))
+  if (request.method === "POST" && isSubContextDefinitionPath(path)) {
+    const prefix = contextRoutePrefix(path)
+    const suffix = path.endsWith("/subcontexts") ? "/subcontexts" : "/subschemas"
+    const schemaId = decodeURIComponent(path.slice(prefix.length, -suffix.length))
     if (usesSupabaseVerification()) {
       return upsertSupabaseSubschema(request, schemaId, body)
     }
@@ -138,6 +140,9 @@ async function route(service, request, url, body) {
       connection_id: url.searchParams.get("connection_id") || request.headers["x-memact-connection-id"] || "",
       activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
     })
+  }
+  if (request.method === "GET" && path === "/v1/credits") {
+    return service.listCredits(readMemactApiKey(request))
   }
   if (request.method === "POST" && path === "/v1/wiki/proposals") {
     return service.proposeWikiContext(readMemactApiKey(request), body, {
@@ -202,6 +207,22 @@ async function route(service, request, url, body) {
   }
 
   throw new AccessError(404, "not_found", "Endpoint not found.")
+}
+
+function contextRoutePrefix(path) {
+  return path.startsWith("/v1/context/") ? "/v1/context/" : "/v1/schemas/"
+}
+
+function isContextDefinitionPath(path) {
+  const isContextPath = path.startsWith("/v1/context/")
+  const isLegacySchemaPath = path.startsWith("/v1/schemas/")
+  const isSubPath = path.endsWith("/subschemas") || path.endsWith("/subcontexts")
+  return (isContextPath || isLegacySchemaPath) && !isSubPath
+}
+
+function isSubContextDefinitionPath(path) {
+  return (path.startsWith("/v1/context/") || path.startsWith("/v1/schemas/"))
+    && (path.endsWith("/subcontexts") || path.endsWith("/subschemas"))
 }
 
 function parseList(value) {

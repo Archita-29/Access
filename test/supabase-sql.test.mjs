@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 
 const latestMigrationPath = new URL("../supabase/migrations/20260515120000_compiled_policies.sql", import.meta.url)
+const strategyMigrationPath = new URL("../supabase/migrations/20260515103000_understanding_strategy.sql", import.meta.url)
 const fullInstallPath = new URL("../supabase/memact_access_full_install.sql", import.meta.url)
 
 test("latest Supabase SQL qualifies pgcrypto calls through the extensions schema", async () => {
@@ -47,6 +48,16 @@ test("Supabase SQL keeps compiled policy support", async () => {
     assert.match(sql, /'understanding_strategy', compiled->'strategy'/)
     assert.match(sql, /Local-first memory/)
     assert.match(sql, /user-owned-cloud-memory/)
+  }
+})
+
+test("Supabase SQL checks cleaned scope arrays without subquery ANY casts", async () => {
+  const strategyMigration = await fs.readFile(strategyMigrationPath, "utf8")
+  const fullInstall = await fs.readFile(fullInstallPath, "utf8")
+
+  for (const sql of [strategyMigration, fullInstall]) {
+    assert.doesNotMatch(sql, /= any\(\(select scopes from clean\)\)/i)
+    assert.match(sql, /\(select 'schema:write' = any\(scopes\) from clean\)/)
   }
 })
 
