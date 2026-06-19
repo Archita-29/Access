@@ -22,7 +22,8 @@ import {
   unknownCategories,
   unknownScopes
 } from "./policy.mjs"
-import { LocalContextMatcher } from "memact-context/context-matcher"
+
+
 
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30
@@ -97,7 +98,7 @@ export class AccessService {
       if (!user) {
         throw new AccessError(401, "invalid_session", "Session user no longer exists.")
       }
-      return { user: publicUser(user), session: publicSession(session) }
+      return { user: publicUser(user), session: publicSession(session), token: rawToken }
     }
 
     const externalUser = await this.verifyExternalSession(rawToken)
@@ -118,7 +119,8 @@ export class AccessService {
           created_at: timestamp(this.now()),
           expires_at: null,
           revoked_at: null
-        }
+        },
+        token: rawToken
       }
     })
   }
@@ -393,6 +395,43 @@ export class AccessService {
   }
 
   async verifyApiAccess(apiKey, requiredScopes = [], requiredCategories = [], connectionId = "") {
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new AccessError(500, "access_backend_missing", "Access verification backend is not configured.")
+      }
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/memact_verify_api_key`, {
+        method: "POST",
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          api_key_input: apiKey,
+          required_scopes_input: requiredScopes,
+          activity_categories_input: requiredCategories,
+          consent_id_input: connectionId || null
+        })
+      })
+      const text = await response.text()
+      let payload = {}
+      try {
+        payload = JSON.parse(text)
+      } catch {
+        payload = { message: text }
+      }
+      if (!response.ok) {
+        const message = payload?.message || payload?.error?.message || "Memact could not verify this API key."
+        throw new AccessError(response.status, payload?.code || payload?.error?.code || "verification_failed", message)
+      }
+      if (!payload?.allowed) {
+        throw new AccessError(403, payload?.error?.code || "access_denied", payload?.error?.message || "Memact access denied.")
+      }
+      return payload
+    }
+
     const cleanRequired = normalizeScopes(requiredScopes)
     const cleanRequiredCategories = normalizeCategories(requiredCategories)
     const keyHash = hashSecret(apiKey || "")
@@ -790,31 +829,308 @@ export class AccessService {
     }
   }
 
-  async queryContextFields(apiKey, body = {}, options = {}) {
-    const requestedContext = Array.isArray(body.requested_context) ? body.requested_context : []
-    const connectionId = body.connection_id || options.connectionId || ""
 
-    const access = await this.verifyApiAccess(apiKey, ["memory:read_summary"], body.activity_categories || [], connectionId)
 
-    const data = await this.store.read()
-    // If caller passed memory_records, use them; otherwise fetch from store filtered by consent
-    const memoryRecords = Array.isArray(body.memory_records) && body.memory_records.length > 0
-      ? body.memory_records
-      : data.memory_records.filter((record) =>
-          !record.connection_id || record.connection_id === access.connection_id
-        )
 
-    const matcher = new LocalContextMatcher({ threshold: body.threshold ?? 0.12 })
-    const matches = matcher.match(requestedContext, memoryRecords)
-
-    return {
-      matches,
-      matcher_kind: matcher.kind,
-      requested_count: requestedContext.length,
-      memory_count: memoryRecords.length
+  async getPublicProfile(username) {
+    const cleanUsername = String(username || "").trim().toLowerCase()
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const profiles = await callSupabaseRest(`memact_profiles?username=eq.${cleanUsername}`)
+      const profile = profiles[0]
+      if (!profile) {
+        throw new AccessError(404, "profile_not_found", "Profile not found.")
+      }
+      const contributions = await callSupabaseRest(`memact_contributions?user_id=eq.${profile.id}&status=eq.approved&visibility=eq.public`)
+      return { profile, contributions }
+    } else {
+      const data = await this.store.read()
+      const profile = data.profiles.find((p) => p.username.toLowerCase() === cleanUsername)
+      if (!profile) {
+        throw new AccessError(404, "profile_not_found", "Profile not found.")
+      }
+      const contributions = data.contributions.filter((c) => c.user_id === profile.id && c.status === "approved" && c.visibility === "public")
+      return { profile, contributions }
     }
   }
 
+  async getPublicLlmTxt(username) {
+    const { profile, contributions } = await this.getPublicProfile(username)
+    const starred = contributions.filter((c) => c.is_starred)
+    const lines = [
+      `# ${profile.full_name || profile.username}`,
+      `Public highlights from their Memact Notebook.`,
+      ""
+    ]
+    if (starred.length === 0) {
+      lines.push("No public highlights shared.")
+    } else {
+      for (const item of starred) {
+        lines.push(`- ${item.content} (Source: ${item.contributor_name || "user"})`)
+      }
+    }
+    return lines.join("\n")
+  }
+
+  async proposeContribution(apiKey, body = {}, options = {}) {
+    const category = String(body.category || "general").trim()
+    const connectionId = body.connection_id || options.connectionId || ""
+    const access = await this.verifyApiAccess(apiKey, ["context:write"], [category], connectionId)
+    
+    const content = String(body.content || "").trim()
+    if (!content) {
+      throw new AccessError(400, "missing_content", "Contribution content is required.")
+    }
+    const contributorType = String(body.contributor_type || "app").trim()
+    const contributorName = String(body.contributor_name || access.app.name || "Connected App").trim()
+    
+    // Quality check system
+    let status = "pending"
+    let junkReason = null
+    let qualityScore = 1.0
+    let confidenceScore = 0.9
+
+    const normalizedContent = content.toLowerCase().trim()
+    const lowInfoPatterns = [
+      "likes music",
+      "uses the internet",
+      "human",
+      "is human",
+      "is a person",
+      "likes food",
+      "uses apps"
+    ]
+    const wordCount = content.split(/\s+/).filter(Boolean).length
+    
+    if (wordCount < 2 || lowInfoPatterns.includes(normalizedContent)) {
+      qualityScore = 0.2
+      junkReason = "Low information"
+      status = "junk"
+    }
+
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const contribution = {
+        id: randomId("ctb"),
+        user_id: access.user_id,
+        content,
+        contributor_type: contributorType,
+        contributor_name: contributorName,
+        status,
+        junk_reason: junkReason,
+        quality_score: qualityScore,
+        confidence_score: confidenceScore,
+        visibility: String(body.visibility || "private"),
+        is_starred: false,
+        created_at: timestamp(this.now())
+      }
+      const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/memact_propose_contribution`, {
+        method: "POST",
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          api_key_input: apiKey,
+          content_input: content,
+          contributor_type_input: contributorType,
+          contributor_name_input: contributorName,
+          visibility_input: contribution.visibility
+        })
+      })
+      const text = await response.text()
+      if (!response.ok) {
+        throw new AccessError(response.status, "propose_failed", text)
+      }
+      return JSON.parse(text)
+    } else {
+      return this.mutate(async (data) => {
+        // Run duplicate checks against existing local contributions
+        const existing = data.contributions.filter((c) => c.user_id === access.user_id)
+        for (const old of existing) {
+          const oldContent = old.content.toLowerCase().trim()
+          if (oldContent === normalizedContent) {
+            qualityScore = 0.1
+            junkReason = "Duplicate"
+            status = "junk"
+            break
+          }
+          const setA = new Set(normalizedContent.split(/\s+/))
+          const setB = new Set(oldContent.split(/\s+/))
+          const intersection = new Set([...setA].filter(x => setB.has(x)))
+          const union = new Set([...setA, ...setB])
+          const jaccard = union.size > 0 ? intersection.size / union.size : 0
+          if (jaccard > 0.8) {
+            qualityScore = 0.3
+            confidenceScore = 0.4
+            junkReason = "Near-duplicate"
+            status = "junk"
+            break
+          }
+        }
+
+        const contribution = {
+          id: randomId("ctb"),
+          user_id: access.user_id,
+          content,
+          contributor_type: contributorType,
+          contributor_name: contributorName,
+          status,
+          junk_reason: junkReason,
+          quality_score: qualityScore,
+          confidence_score: confidenceScore,
+          visibility: String(body.visibility || "private"),
+          is_starred: false,
+          created_at: timestamp(this.now())
+        }
+        data.contributions.push(contribution)
+        return { accepted: true, contribution }
+      })
+    }
+  }
+
+  async requestContextPacket(apiKey, body = {}, options = {}) {
+    const categories = Array.isArray(body.categories) ? body.categories : []
+    const connectionId = body.connection_id || options.connectionId || ""
+    const access = await this.verifyApiAccess(apiKey, ["memory:read_summary"], categories, connectionId)
+
+    let contributions = []
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/memact_get_contributions_for_app`, {
+        method: "POST",
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          api_key_input: apiKey,
+          required_scopes_input: ["memory:read_summary"],
+          activity_categories_input: categories
+        })
+      })
+      const text = await response.text()
+      if (!response.ok) {
+        throw new AccessError(response.status, "cap_failed", text)
+      }
+      contributions = JSON.parse(text)
+    } else {
+      const data = await this.store.read()
+      contributions = data.contributions.filter((c) => c.user_id === access.user_id)
+    }
+
+    const matched = matchContributions(contributions, body.query || "", categories)
+    return {
+      success: true,
+      context_packet: matched.map((c) => ({
+        id: c.id,
+        content: c.content,
+        contributor_name: c.contributor_name,
+        created_at: c.created_at
+      }))
+    }
+  }
+
+  async listContributions(userId, userToken) {
+    let contributions = []
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const user_uuid = userId.startsWith("supabase:") ? userId.slice(9) : userId
+      contributions = await callSupabaseRest(`memact_contributions?user_id=eq.${user_uuid}`, "GET", null, {
+        Authorization: `Bearer ${userToken}`
+      })
+    } else {
+      const data = await this.store.read()
+      contributions = data.contributions.filter((c) => c.user_id === userId)
+    }
+    return {
+      pending: contributions.filter((c) => c.status === "pending"),
+      approved: contributions.filter((c) => c.status === "approved"),
+      rejected: contributions.filter((c) => c.status === "rejected"),
+      junk: contributions.filter((c) => c.status === "junk")
+    }
+  }
+
+  async approveContribution(userId, id, body, userToken) {
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const response = await callSupabaseRest(`memact_contributions?id=eq.${id}`, "PATCH", {
+        status: "approved",
+        ...(body?.visibility ? { visibility: body.visibility } : {})
+      }, {
+        Authorization: `Bearer ${userToken}`,
+        Prefer: "return=representation"
+      })
+      return { success: true, contribution: response[0] }
+    } else {
+      return this.mutate(async (data) => {
+        const contribution = data.contributions.find((c) => c.id === id && c.user_id === userId)
+        if (!contribution) throw new AccessError(404, "not_found", "Contribution not found.")
+        contribution.status = "approved"
+        if (body?.visibility) contribution.visibility = body.visibility
+        return { success: true, contribution }
+      })
+    }
+  }
+
+  async editContribution(userId, id, body, userToken) {
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const updates = {}
+      if (body?.content) updates.content = body.content
+      if (body?.visibility) updates.visibility = body.visibility
+      if (body?.is_starred !== undefined) updates.is_starred = Boolean(body.is_starred)
+      const response = await callSupabaseRest(`memact_contributions?id=eq.${id}`, "PATCH", updates, {
+        Authorization: `Bearer ${userToken}`,
+        Prefer: "return=representation"
+      })
+      return { success: true, contribution: response[0] }
+    } else {
+      return this.mutate(async (data) => {
+        const contribution = data.contributions.find((c) => c.id === id && c.user_id === userId)
+        if (!contribution) throw new AccessError(404, "not_found", "Contribution not found.")
+        if (body?.content) contribution.content = body.content
+        if (body?.visibility) contribution.visibility = body.visibility
+        if (body?.is_starred !== undefined) contribution.is_starred = Boolean(body.is_starred)
+        return { success: true, contribution }
+      })
+    }
+  }
+
+  async rejectContribution(userId, id, body, userToken) {
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const response = await callSupabaseRest(`memact_contributions?id=eq.${id}`, "PATCH", {
+        status: "rejected"
+      }, {
+        Authorization: `Bearer ${userToken}`,
+        Prefer: "return=representation"
+      })
+      return { success: true, contribution: response[0] }
+    } else {
+      return this.mutate(async (data) => {
+        const contribution = data.contributions.find((c) => c.id === id && c.user_id === userId)
+        if (!contribution) throw new AccessError(404, "not_found", "Contribution not found.")
+        contribution.status = "rejected"
+        return { success: true, contribution }
+      })
+    }
+  }
+
+  async deleteContribution(userId, id, userToken) {
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      await callSupabaseRest(`memact_contributions?id=eq.${id}`, "DELETE", null, {
+        Authorization: `Bearer ${userToken}`
+      })
+      return { success: true }
+    } else {
+      return this.mutate(async (data) => {
+        const initialLength = data.contributions.length
+        data.contributions = data.contributions.filter((c) => !(c.id === id && c.user_id === userId))
+        if (data.contributions.length === initialLength) throw new AccessError(404, "not_found", "Contribution not found.")
+        return { success: true }
+      })
+    }
+  }
 
   async mutate(fn) {
     const data = await this.store.read()
@@ -1303,4 +1619,58 @@ function sanitizeProposalValue(value) {
 
 function timestamp(date) {
   return date.toISOString()
+}
+
+async function callSupabaseRest(path, method = "GET", body = null, headers = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new AccessError(500, "access_backend_missing", "Access verification backend is not configured.")
+  }
+  const requestHeaders = {
+    apikey: supabaseAnonKey,
+    Authorization: headers.Authorization || `Bearer ${supabaseAnonKey}`,
+    ...headers
+  }
+  if (body) {
+    requestHeaders["Content-Type"] = "application/json"
+  }
+  const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+    method,
+    headers: requestHeaders,
+    body: body ? JSON.stringify(body) : null
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let errorMsg = text
+    try {
+      const parsed = JSON.parse(text)
+      errorMsg = parsed.message || parsed.error_description || text
+    } catch {}
+    throw new AccessError(response.status, "supabase_error", errorMsg)
+  }
+  if (response.status === 204) return null
+  return response.json()
+}
+
+function matchContributions(contributions, query = "", categories = []) {
+  const queryWords = String(query)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2)
+  
+  const categoryWords = categories.map((c) => String(c).toLowerCase().trim())
+
+  return contributions.filter((c) => {
+    if (c.status !== "approved") return false
+    if (!["public", "apps", "agents"].includes(c.visibility)) return false
+
+    const contentLower = c.content.toLowerCase()
+    const matchesCategory = categoryWords.some((cat) => contentLower.includes(cat))
+    const matchesQuery = queryWords.some((word) => contentLower.includes(word))
+
+    if (queryWords.length === 0 && categoryWords.length === 0) return true
+
+    return matchesCategory || matchesQuery
+  })
 }

@@ -3,26 +3,20 @@ import path from "node:path"
 
 export function createEmptyStore() {
   return {
-    schema_version: "memact.access.v0",
+    schema_version: "memact.access.v2026",
     users: [],
     sessions: [],
     apps: [],
     api_keys: [],
     consents: [],
-    capture_events: [],
-    feature_runs: [],
-    feature_connections: [],
-    feature_registry: [],
-    schema_definitions: [],
-    subschema_definitions: [],
-    wiki_proposals: [],
-    schema_packets: [],
-    memory_records: [],
+    profiles: [],
+    contributions: [],
+    connections: [],
     credit_events: [],
-    usage_events: [],
     audit_log: []
   }
 }
+
 
 export class JsonFileStore {
   constructor(filePath) {
@@ -65,7 +59,7 @@ export class MemoryStore {
 export function migrateStore(data) {
   const base = data && typeof data === "object" ? data : {}
   return {
-    schema_version: "memact.access.v0",
+    schema_version: "memact.access.v2026",
     users: Array.isArray(base.users)
       ? base.users.map((user) => ({
         ...user,
@@ -94,17 +88,10 @@ export function migrateStore(data) {
         compiled_policy: consent.compiled_policy || null
       }))
       : [],
-    capture_events: Array.isArray(base.capture_events) ? base.capture_events : [],
-    feature_runs: Array.isArray(base.feature_runs) ? base.feature_runs : [],
-    feature_connections: Array.isArray(base.feature_connections) ? base.feature_connections : [],
-    feature_registry: Array.isArray(base.feature_registry) ? base.feature_registry : [],
-    schema_definitions: Array.isArray(base.schema_definitions) ? base.schema_definitions : [],
-    subschema_definitions: Array.isArray(base.subschema_definitions) ? base.subschema_definitions : [],
-    wiki_proposals: Array.isArray(base.wiki_proposals) ? base.wiki_proposals : [],
-    schema_packets: Array.isArray(base.schema_packets) ? base.schema_packets : [],
-    memory_records: Array.isArray(base.memory_records) ? base.memory_records : [],
+    profiles: Array.isArray(base.profiles) ? base.profiles : [],
+    contributions: Array.isArray(base.contributions) ? base.contributions : [],
+    connections: Array.isArray(base.connections) ? base.connections : [],
     credit_events: Array.isArray(base.credit_events) ? base.credit_events : [],
-    usage_events: Array.isArray(base.usage_events) ? base.usage_events : [],
     audit_log: Array.isArray(base.audit_log) ? base.audit_log : []
   }
 }

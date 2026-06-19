@@ -26,7 +26,5 @@
     "check": "node ./scripts/check.mjs && node --test",
     "test": "node --test"
   },
-  "dependencies": {
-    "memact-context": "file:../Context"
-  }
+  "dependencies": {}
 }

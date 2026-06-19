@@ -71,6 +71,19 @@ async function route(service, request, url, body) {
     return service.signin(body)
   }
 
+  // Public Identity address endpoints (username.memact.me)
+  if (request.method === "GET" && path.startsWith("/u/")) {
+    const isLlmTxt = path.endsWith("/llms.txt")
+    const username = isLlmTxt ? path.slice(3, -9) : path.slice(3)
+    if (isLlmTxt) {
+      return {
+        body: await service.getPublicLlmTxt(username),
+        contentType: "text/plain; charset=utf-8"
+      }
+    }
+    return service.getPublicProfile(username)
+  }
+
   if (request.method === "POST" && path === "/v1/access/verify") {
     if (usesSupabaseVerification()) {
       return verifySupabaseApiAccess(request, body)
@@ -82,89 +95,53 @@ async function route(service, request, url, body) {
       body?.connection_id || ""
     )
   }
-  if (request.method === "POST" && path === "/v1/intent/predict") {
-    throw new AccessError(410, "intent_core_removed", "Intent prediction has moved out of the core API.")
-  }
-  if (request.method === "POST" && path === "/v1/capture/events") {
-    return service.ingestCaptureEvent(readMemactApiKey(request), body, {
+
+  // App/Agent propose contribution route
+  if (request.method === "POST" && path === "/v1/contributions/propose") {
+    return service.proposeContribution(readMemactApiKey(request), body, {
       connectionId: request.headers["x-memact-connection-id"]
     })
   }
-  if (request.method === "GET" && path === "/v1/features") {
-    return service.listFeatures()
-  }
-  if (request.method === "POST" && path.startsWith("/v1/features/") && path.endsWith("/run")) {
-    const featureId = decodeURIComponent(path.slice("/v1/features/".length, -"/run".length))
-    return service.runFeature(readMemactApiKey(request), featureId, body)
-  }
-  if (request.method === "GET" && (path === "/v1/context" || path === "/v1/schemas")) {
-    if (usesSupabaseVerification()) {
-      return listSupabaseSchemas(request, url)
-    }
-    return service.listSchemas(readMemactApiKey(request), {
-      connection_id: url.searchParams.get("connection_id") || request.headers["x-memact-connection-id"] || "",
-      activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
-    })
-  }
-  if (request.method === "POST" && (path === "/v1/context" || path === "/v1/schemas")) {
-    if (usesSupabaseVerification()) {
-      return upsertSupabaseSchema(request, body)
-    }
-    return service.createSchemaDefinition(readMemactApiKey(request), body, {
+
+  // Scoped Context Packet (CAP) request route
+  if (request.method === "POST" && path === "/v1/cap/request") {
+    return service.requestContextPacket(readMemactApiKey(request), body, {
       connectionId: request.headers["x-memact-connection-id"]
     })
   }
-  if (request.method === "GET" && isContextDefinitionPath(path)) {
-    const schemaId = decodeURIComponent(path.slice(contextRoutePrefix(path).length))
-    if (usesSupabaseVerification()) {
-      return getSupabaseSchema(request, url, schemaId)
-    }
-    return service.getSchemaDefinition(readMemactApiKey(request), schemaId, {
-      connection_id: url.searchParams.get("connection_id") || request.headers["x-memact-connection-id"] || "",
-      activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
-    })
-  }
-  if (request.method === "POST" && isSubContextDefinitionPath(path)) {
-    const prefix = contextRoutePrefix(path)
-    const suffix = path.endsWith("/subcontexts") ? "/subcontexts" : "/subschemas"
-    const schemaId = decodeURIComponent(path.slice(prefix.length, -suffix.length))
-    if (usesSupabaseVerification()) {
-      return upsertSupabaseSubschema(request, schemaId, body)
-    }
-    return service.addSubSchemaDefinition(readMemactApiKey(request), schemaId, body, {
-      connectionId: request.headers["x-memact-connection-id"]
-    })
-  }
-  if (request.method === "GET" && path === "/v1/memory") {
-    return service.listMemory(readMemactApiKey(request), {
-      connection_id: url.searchParams.get("connection_id") || request.headers["x-memact-connection-id"] || "",
-      activity_categories: parseList(url.searchParams.get("activity_categories") || url.searchParams.get("categories"))
-    })
-  }
+
   if (request.method === "GET" && path === "/v1/credits") {
     return service.listCredits(readMemactApiKey(request))
   }
-  if (request.method === "POST" && path === "/v1/wiki/proposals") {
-    return service.proposeWikiContext(readMemactApiKey(request), body, {
-      connectionId: request.headers["x-memact-connection-id"]
-    })
-  }
 
-  if (request.method === "POST" && path === "/v1/context/query") {
-    return service.queryContextFields(readMemactApiKey(request), body, {
-      connectionId: request.headers["x-memact-connection-id"]
-    })
-  }
-
+  // User authenticated session
   const auth = await service.authenticateSession(request.headers.authorization)
   if (request.method === "GET" && path === "/v1/me") {
     return { user: auth.user }
   }
-  if (request.method === "GET" && path === "/v1/capture/events") {
-    return service.listCaptureEvents(auth.user.id, {
-      app_id: url.searchParams.get("app_id") || ""
-    })
+  if (request.method === "GET" && path === "/v1/contributions") {
+    return service.listContributions(auth.user.id, auth.token)
   }
+  if (request.method === "POST" && path.startsWith("/v1/contributions/")) {
+    const parts = path.split("/") // /v1/contributions/:id/:action
+    if (parts.length === 5) {
+      const id = parts[3]
+      const action = parts[4]
+      if (action === "approve") {
+        return service.approveContribution(auth.user.id, id, body, auth.token)
+      }
+      if (action === "edit") {
+        return service.editContribution(auth.user.id, id, body, auth.token)
+      }
+      if (action === "reject") {
+        return service.rejectContribution(auth.user.id, id, body, auth.token)
+      }
+      if (action === "delete") {
+        return service.deleteContribution(auth.user.id, id, auth.token)
+      }
+    }
+  }
+
   if (request.method === "GET" && path === "/v1/apps") {
     return service.listApps(auth.user.id)
   }
@@ -182,15 +159,6 @@ async function route(service, request, url, body) {
   }
   if (request.method === "POST" && path === "/v1/api-keys/revoke") {
     return service.revokeApiKey(auth.user.id, body?.key_id)
-  }
-  if (request.method === "GET" && path === "/v1/feature-connections") {
-    return service.listFeatureConnections(auth.user.id)
-  }
-  if (request.method === "POST" && path === "/v1/feature-connections") {
-    return service.connectFeature(auth.user.id, body)
-  }
-  if (request.method === "POST" && path === "/v1/feature-connections/disconnect") {
-    return service.disconnectFeature(auth.user.id, body?.connection_id)
   }
   if (request.method === "GET" && path === "/v1/consents") {
     return service.listConsents(auth.user.id)
