@@ -2206,7 +2206,7 @@ create policy "allow users to manage own connections"
 -- === 20260619120000_cleanup_legacy.sql ===
 
 -- Drop legacy functions
-drop function if exists public.memact_schema_definition_payload(public.memact_schema_definitions) cascade;
+drop function if exists public.memact_schema_definition_payload cascade;
 drop function if exists public.memact_upsert_schema_definition(text, uuid, text, text, text, jsonb) cascade;
 drop function if exists public.memact_upsert_subschema_definition(text, uuid, text, text, text, jsonb) cascade;
 drop function if exists public.memact_list_schema_definitions(text, uuid, text[]) cascade;
