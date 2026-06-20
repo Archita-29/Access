@@ -2119,3 +2119,211 @@ grant execute on function public.memact_list_schema_definitions(text, uuid, text
 grant execute on function public.memact_get_schema_definition(text, uuid, text, text[]) to anon, authenticated;
 
 notify pgrst, 'reload schema';
+
+
+-- === 20260617000000_memact_notebook.sql ===
+
+-- Create memact profiles table
+create table if not exists public.memact_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text not null unique,
+  full_name text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint username_length check (char_length(username) >= 3),
+  constraint username_format check (username ~ '^[a-z0-9._-]+$')
+);
+
+-- Create memact contributions table
+create table if not exists public.memact_contributions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  content text not null,
+  contributor_type text not null check (contributor_type in ('user', 'friend', 'app', 'agent', 'organization')),
+  contributor_name text not null,
+  status text not null check (status in ('pending', 'approved', 'rejected')),
+  visibility text not null check (visibility in ('private', 'friends', 'apps', 'agents', 'public')),
+  is_starred boolean not null default false,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+-- Create memact connections table
+create table if not exists public.memact_connections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  type text not null check (type in ('app', 'agent', 'friend')),
+  active boolean not null default true,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+-- Enable Row Level Security (RLS)
+alter table public.memact_profiles enable row level security;
+alter table public.memact_contributions enable row level security;
+alter table public.memact_connections enable row level security;
+
+-- Policies for profiles
+drop policy if exists "allow public read on profiles" on public.memact_profiles;
+create policy "allow public read on profiles"
+  on public.memact_profiles
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "allow users to manage own profile" on public.memact_profiles;
+create policy "allow users to manage own profile"
+  on public.memact_profiles
+  for all
+  to authenticated
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+-- Policies for contributions
+drop policy if exists "allow users to manage own contributions" on public.memact_contributions;
+create policy "allow users to manage own contributions"
+  on public.memact_contributions
+  for all
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+drop policy if exists "allow public read on approved public contributions" on public.memact_contributions;
+create policy "allow public read on approved public contributions"
+  on public.memact_contributions
+  for select
+  to anon, authenticated
+  using (visibility = 'public' and status = 'approved');
+
+-- Policies for connections
+drop policy if exists "allow users to manage own connections" on public.memact_connections;
+create policy "allow users to manage own connections"
+  on public.memact_connections
+  for all
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+
+-- === 20260619120000_cleanup_legacy.sql ===
+
+-- Drop legacy functions
+drop function if exists public.memact_schema_definition_payload(public.memact_schema_definitions) cascade;
+drop function if exists public.memact_upsert_schema_definition(text, uuid, text, text, text, jsonb) cascade;
+drop function if exists public.memact_upsert_subschema_definition(text, uuid, text, text, text, jsonb) cascade;
+drop function if exists public.memact_list_schema_definitions(text, uuid, text[]) cascade;
+drop function if exists public.memact_get_schema_definition(text, uuid, text, text[]) cascade;
+
+-- Drop legacy tables and their cascades (indexes, policies, etc.)
+drop table if exists public.memact_subschema_definitions cascade;
+drop table if exists public.memact_schema_definitions cascade;
+drop table if exists public.memact_feature_connections cascade;
+drop table if exists public.memact_capture_events cascade;
+drop table if exists public.memact_feature_registry cascade;
+drop table if exists public.memact_feature_runs cascade;
+drop table if exists public.memact_schema_packets cascade;
+drop table if exists public.memact_memory_records cascade;
+drop table if exists public.memact_usage_events cascade;
+
+notify pgrst, 'reload schema';
+
+
+-- === 20260619130000_notebook_rpcs.sql ===
+
+-- Create RPC function to propose contribution
+create or replace function public.memact_propose_contribution(
+  api_key_input text,
+  content_input text,
+  contributor_type_input text,
+  contributor_name_input text,
+  visibility_input text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  verification jsonb;
+  new_contribution_id uuid;
+begin
+  verification := public.memact_verify_api_key(api_key_input, array['context:write']::text[], array[]::text[]);
+  if not (verification->>'allowed')::boolean then
+    raise exception 'Access denied: %', verification->'error'->>'message';
+  end if;
+
+  insert into public.memact_contributions (
+    user_id,
+    content,
+    contributor_type,
+    contributor_name,
+    status,
+    visibility,
+    is_starred
+  ) values (
+    (verification->>'user_id')::uuid,
+    content_input,
+    contributor_type_input,
+    contributor_name_input,
+    'pending',
+    visibility_input,
+    false
+  ) returning id into new_contribution_id;
+
+  return jsonb_build_object(
+    'accepted', true,
+    'contribution', jsonb_build_object(
+      'id', new_contribution_id,
+      'user_id', verification->>'user_id',
+      'content', content_input,
+      'contributor_type', contributor_type_input,
+      'contributor_name', contributor_name_input,
+      'status', 'pending',
+      'visibility', visibility_input,
+      'is_starred', false
+    )
+  );
+end;
+$$;
+
+grant execute on function public.memact_propose_contribution(text, text, text, text, text) to anon, authenticated;
+
+-- Create RPC function to get contributions for app (CAP)
+create or replace function public.memact_get_contributions_for_app(
+  api_key_input text,
+  required_scopes_input text[],
+  activity_categories_input text[]
+)
+returns table (
+  id uuid,
+  user_id uuid,
+  content text,
+  contributor_type text,
+  contributor_name text,
+  status text,
+  visibility text,
+  is_starred boolean,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  verification jsonb;
+begin
+  verification := public.memact_verify_api_key(api_key_input, required_scopes_input, activity_categories_input);
+  if not (verification->>'allowed')::boolean then
+    raise exception 'Access denied: %', verification->'error'->>'message';
+  end if;
+
+  return query
+  select c.id, c.user_id, c.content, c.contributor_type, c.contributor_name, c.status, c.visibility, c.is_starred, c.created_at
+  from public.memact_contributions c
+  where c.user_id = (verification->>'user_id')::uuid
+    and c.status = 'approved'
+    and c.visibility in ('public', 'apps', 'agents');
+end;
+$$;
+
+grant execute on function public.memact_get_contributions_for_app(text, text[], text[]) to anon, authenticated;
+
+notify pgrst, 'reload schema';
