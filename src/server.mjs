@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url"
 import { loadLocalEnv } from "./env.mjs"
 import { JsonFileStore } from "./store.mjs"
 import { AccessError, AccessService } from "./service.mjs"
-import { CATEGORY_DEFINITIONS, KNOWLEDGE_GRAPH_CONTRACT, SAFETY_RULES, SENSITIVE_CAPTURE_RULES } from "./policy.mjs"
+import { CATEGORY_DEFINITIONS, KNOWLEDGE_GRAPH_CONTRACT, PORTABLE_CONTEXT_CONTRACT, SAFETY_RULES, SENSITIVE_CAPTURE_RULES } from "./policy.mjs"
+
 
 loadLocalEnv()
 
@@ -61,7 +62,8 @@ async function route(service, request, url, body) {
       sensitive_capture_rules: SENSITIVE_CAPTURE_RULES,
       activity_categories: CATEGORY_DEFINITIONS,
       safety_rules: SAFETY_RULES,
-      knowledge_graph_contract: KNOWLEDGE_GRAPH_CONTRACT
+      knowledge_graph_contract: KNOWLEDGE_GRAPH_CONTRACT,
+      portable_context_contract: PORTABLE_CONTEXT_CONTRACT
     }
   }
   if (request.method === "POST" && path === "/v1/auth/signup") {

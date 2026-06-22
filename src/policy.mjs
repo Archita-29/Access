@@ -622,6 +622,13 @@ export const KNOWLEDGE_GRAPH_CONTRACT = Object.freeze({
   authority: "Apps receive scoped understanding from approved memory. Memact keeps raw capture, filtering, and sensitive exclusions local-first."
 })
 
+export const PORTABLE_CONTEXT_CONTRACT = Object.freeze({
+  memoryUnit: "context_suggestion",
+  objects: ["evidence", "context_suggestion", "claim", "relevance_vector"],
+  authority: "Apps receive scoped context from approved claims. Memact keeps raw capture, filtering, and sensitive exclusions local-first."
+})
+
+
 export function normalizeScopes(scopes = []) {
   const known = new Set(Object.keys(SCOPE_DEFINITIONS))
   return [...new Set((Array.isArray(scopes) ? scopes : [])
