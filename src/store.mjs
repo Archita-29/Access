@@ -92,7 +92,17 @@ export function migrateStore(data) {
     contributions: Array.isArray(base.contributions) ? base.contributions : [],
     connections: Array.isArray(base.connections) ? base.connections : [],
     credit_events: Array.isArray(base.credit_events) ? base.credit_events : [],
-    audit_log: Array.isArray(base.audit_log) ? base.audit_log : []
+    audit_log: Array.isArray(base.audit_log) ? base.audit_log : [],
+    usage_events: Array.isArray(base.usage_events) ? base.usage_events : [],
+    wiki_proposals: Array.isArray(base.wiki_proposals) ? base.wiki_proposals : [],
+    capture_events: Array.isArray(base.capture_events) ? base.capture_events : [],
+    schema_definitions: Array.isArray(base.schema_definitions) ? base.schema_definitions : [],
+    subschema_definitions: Array.isArray(base.subschema_definitions) ? base.subschema_definitions : [],
+    schema_packets: Array.isArray(base.schema_packets) ? base.schema_packets : [],
+    memory_records: Array.isArray(base.memory_records) ? base.memory_records : [],
+    feature_connections: Array.isArray(base.feature_connections) ? base.feature_connections : [],
+    feature_registry: Array.isArray(base.feature_registry) ? base.feature_registry : [],
+    feature_runs: Array.isArray(base.feature_runs) ? base.feature_runs : []
   }
 }
 

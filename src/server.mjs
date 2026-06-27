@@ -105,6 +105,13 @@ async function route(service, request, url, body) {
     })
   }
 
+  // App/Agent Context Rectification Protocol (CRP) route
+  if (request.method === "POST" && path === "/v1/contributions/rectify") {
+    return service.rectifyContribution(readMemactApiKey(request), body, {
+      connectionId: request.headers["x-memact-connection-id"]
+    })
+  }
+
   // Scoped Context Packet (CAP) request route
   if (request.method === "POST" && path === "/v1/cap/request") {
     return service.requestContextPacket(readMemactApiKey(request), body, {

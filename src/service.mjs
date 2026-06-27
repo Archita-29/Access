@@ -22,6 +22,7 @@ import {
   unknownCategories,
   unknownScopes
 } from "./policy.mjs"
+import { buildCapPacket } from "../../Memory/src/cap-packet.mjs"
 
 
 
@@ -990,6 +991,82 @@ export class AccessService {
     }
   }
 
+  async rectifyContribution(apiKey, body = {}, options = {}) {
+    const category = String(body.category || "general").trim()
+    const connectionId = body.connection_id || options.connectionId || ""
+    const access = await this.verifyApiAccess(apiKey, ["context:write"], [category], connectionId)
+    
+    const content = String(body.content || "").trim()
+    const targetId = String(body.target_id || "").trim()
+    
+    if (!content) {
+      throw new AccessError(400, "missing_content", "Rectification content is required.")
+    }
+    if (!targetId) {
+      throw new AccessError(400, "missing_target_id", "Rectification target_id is required.")
+    }
+    
+    const contributorType = String(body.contributor_type || "app").trim()
+    const contributorName = String(body.contributor_name || access.app.name || "Connected App").trim()
+    
+    if (process.env.MEMACT_ACCESS_BACKEND === "supabase") {
+      const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/memact_rectify_contribution`, {
+        method: "POST",
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          api_key_input: apiKey,
+          content_input: content,
+          target_id_input: targetId,
+          contributor_type_input: contributorType,
+          contributor_name_input: contributorName
+        })
+      })
+      const text = await response.text()
+      if (!response.ok) {
+        // Fallback to normal propose if rectify RPC doesn't exist yet
+        if (response.status === 404 || text.includes("Could not find")) {
+          return this.proposeContribution(apiKey, {
+             ...body,
+             content: `[Rectifies ${targetId}] ${content}`
+          }, options)
+        }
+        throw new AccessError(response.status, "rectify_failed", text)
+      }
+      return JSON.parse(text)
+    } else {
+      return this.mutate(async (data) => {
+        const target = data.contributions.find((c) => c.id === targetId && c.user_id === access.user_id)
+        if (!target) {
+          throw new AccessError(404, "not_found", "Target contribution not found.")
+        }
+        
+        const contribution = {
+          id: randomId("ctb"),
+          user_id: access.user_id,
+          content,
+          rectifies_id: targetId,
+          contributor_type: contributorType,
+          contributor_name: contributorName,
+          status: "pending",
+          junk_reason: null,
+          quality_score: 1.0,
+          confidence_score: 1.0,
+          visibility: String(body.visibility || "private"),
+          is_starred: false,
+          created_at: timestamp(this.now())
+        }
+        data.contributions.push(contribution)
+        return { accepted: true, contribution }
+      })
+    }
+  }
+
   async requestContextPacket(apiKey, body = {}, options = {}) {
     const categories = Array.isArray(body.categories) ? body.categories : []
     const connectionId = body.connection_id || options.connectionId || ""
@@ -1022,15 +1099,38 @@ export class AccessService {
       contributions = data.contributions.filter((c) => c.user_id === access.user_id)
     }
 
-    const matched = matchContributions(contributions, body.query || "", categories)
-    return {
-      success: true,
-      context_packet: matched.map((c) => ({
-        id: c.id,
-        content: c.content,
-        contributor_name: c.contributor_name,
-        created_at: c.created_at
-      }))
+    // Map contributions to Memory Engine format
+    const approved_memory_records = contributions.map(c => ({
+      id: c.id,
+      value: c.content,
+      source: c.contributor_name,
+      status: c.status || "approved",
+      category: c.categories?.[0] || "general",
+      created_at: c.created_at,
+      actor: { type: "memact_worker" }
+    }))
+
+    const capRequest = {
+      request_id: body.request_id || randomId("req"),
+      app_id: body.app_id || access.app.id,
+      connection_id: connectionId,
+      purpose: body.purpose || "general_context",
+      requested_context: body.requested_context || (body.query ? [{ description: body.query }] : [])
+    }
+
+    try {
+      const packet = buildCapPacket({
+        cap_request: capRequest,
+        approved_memory_records,
+        requires_user_review: true
+      })
+
+      return {
+        success: true,
+        context_packet: packet
+      }
+    } catch (err) {
+      throw new AccessError(400, "invalid_cap_request", err.message)
     }
   }
 
