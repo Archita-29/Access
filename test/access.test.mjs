@@ -77,6 +77,7 @@ test("API access requires both key scopes and user consent", async () => {
   )
 })
 
+
 test("API access is limited by activity categories", async () => {
   const service = new AccessService(new MemoryStore())
   const signup = await service.signup({ email: "category@example.com", password: "long password" })
@@ -112,6 +113,40 @@ test("API access is limited by activity categories", async () => {
   )
 })
 
+test("app cannot submit context to an ungranted category", async () => {
+  const service = new AccessService(new MemoryStore())
+
+  const signup = await service.signup({
+    email: "submit@example.com",
+    password: "long password"
+  })
+
+  const app = await service.registerApp(signup.user.id, {
+    name: "News App",
+    categories: ["web:news"]
+  })
+
+  const key = await service.createApiKey(signup.user.id, {
+    app_id: app.app.id,
+    scopes: ["context:write"]
+  })
+
+  await service.grantConsent(signup.user.id, {
+    app_id: app.app.id,
+    scopes: ["context:write"],
+    categories: ["web:news"]
+  })
+
+  await assert.rejects(
+    () =>
+      service.proposeWikiContext(key.key, {
+        category: "ai:assistant",
+        title: "Test Context",
+        context: { value: "hello" }
+      }),
+    /activity categories/
+  )
+})
 test("connect flow grants a user-specific connection id", async () => {
   const service = new AccessService(new MemoryStore())
   const developer = await service.signup({ email: "developer@example.com", password: "long password" })
